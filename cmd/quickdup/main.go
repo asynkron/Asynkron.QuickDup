@@ -241,7 +241,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, extension) {
+		if !info.IsDir() && strings.EqualFold(filepath.Ext(path), extension) {
 			files = append(files, path)
 		}
 		return nil

@@ -176,7 +176,7 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 6, "Minimum score to report (uniqueWords + lines)")
+	minScore := flag.Int("min-score", 3, "Minimum score to report (uniqueWords)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
@@ -254,7 +254,7 @@ func main() {
 		if len(locs) >= *minOccur {
 			pattern := locs[0].Pattern
 			uniqueWords := countUniqueWords(pattern)
-			score := uniqueWords + len(pattern)
+			score := uniqueWords
 			if score < *minScore {
 				skippedLowScore++
 				continue
@@ -586,16 +586,48 @@ func countUniqueWords(pattern []IndentAndWord) int {
 	return len(seen)
 }
 
-// Symbols that don't count as "real" starting words
-func isSymbolOnly(word string) bool {
-	if len(word) == 0 {
-		return true
+// OccurrenceKey uniquely identifies an occurrence by file and position
+type OccurrenceKey struct {
+	Filename   string
+	EntryIndex int
+}
+
+// filterOverlappingOccurrences removes adjacent occurrences within the same file
+// For occurrences at positions N and N+1, only keeps N (the earlier one)
+func filterOverlappingOccurrences(locs []PatternLocation, patternLen int) []PatternLocation {
+	if len(locs) <= 1 {
+		return locs
 	}
-	// Single character symbols
-	if len(word) == 1 {
-		return strings.ContainsAny(word, "{}[]()<>,.;:!?@#$%^&*+-=/\\|`~\"'")
+
+	// Group by filename
+	byFile := make(map[string][]PatternLocation)
+	for _, loc := range locs {
+		byFile[loc.Filename] = append(byFile[loc.Filename], loc)
 	}
-	return false
+
+	var result []PatternLocation
+	for _, fileLocs := range byFile {
+		if len(fileLocs) == 1 {
+			result = append(result, fileLocs[0])
+			continue
+		}
+
+		// Sort by EntryIndex
+		sort.Slice(fileLocs, func(i, j int) bool {
+			return fileLocs[i].EntryIndex < fileLocs[j].EntryIndex
+		})
+
+		// Keep non-overlapping: if positions overlap, keep only the first
+		lastEnd := -1
+		for _, loc := range fileLocs {
+			if loc.EntryIndex >= lastEnd {
+				result = append(result, loc)
+				lastEnd = loc.EntryIndex + patternLen
+			}
+		}
+	}
+
+	return result
 }
 
 func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccur int, minSize int) map[uint64][]PatternLocation {
@@ -638,7 +670,7 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 	}
 	fmt.Printf("  %d-line: %d patterns with %d+ occurrences\n", minSize, len(survivors), minOccur)
 
-	// Track previous generation for deferred symbol filtering
+	// Track previous generation for deferred processing
 	previousGen := survivors
 
 	// Step 3: Grow patterns by extending the window
@@ -675,21 +707,36 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 			}
 		}
 
-		// Now that we've grown, add previous generation to results (with symbol filter)
-		for hash, locs := range previousGen {
-			if len(locs) > 0 {
-				p := locs[0].Pattern
-				if !isSymbolOnly(p[0].Word) && !isSymbolOnly(p[len(p)-1].Word) {
-					allPatterns[hash] = locs
-				}
-			}
-		}
-
-		// Filter to >= minOccur for next growth iteration
+		// Filter next generation to >= minOccur and track which occurrences grew
+		grewToChild := make(map[OccurrenceKey]bool)
 		survivors = make(map[uint64][]PatternLocation)
 		for hash, locs := range nextPatterns {
 			if len(locs) >= minOccur {
 				survivors[hash] = locs
+				// Mark these occurrences as having grown into surviving children
+				for _, loc := range locs {
+					grewToChild[OccurrenceKey{loc.Filename, loc.EntryIndex}] = true
+				}
+			}
+		}
+
+		// Add previous generation to results, filtering out occurrences that grew
+		prevLen := currentLen - 1
+		for hash, locs := range previousGen {
+			// Filter out occurrences that grew into children
+			filteredLocs := make([]PatternLocation, 0, len(locs))
+			for _, loc := range locs {
+				if !grewToChild[OccurrenceKey{loc.Filename, loc.EntryIndex}] {
+					filteredLocs = append(filteredLocs, loc)
+				}
+			}
+
+			// Filter out adjacent/overlapping occurrences within same file
+			filteredLocs = filterOverlappingOccurrences(filteredLocs, prevLen)
+
+			// Only add if still meets minOccur
+			if len(filteredLocs) >= minOccur {
+				allPatterns[hash] = filteredLocs
 			}
 		}
 
@@ -698,16 +745,6 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 		}
 
 		previousGen = survivors
-	}
-
-	// Add the final generation (which couldn't grow further)
-	for hash, locs := range previousGen {
-		if len(locs) > 0 {
-			p := locs[0].Pattern
-			if !isSymbolOnly(p[0].Word) && !isSymbolOnly(p[len(p)-1].Word) {
-				allPatterns[hash] = locs
-			}
-		}
 	}
 
 	fmt.Printf("Growth stopped at %d lines\n", currentLen-1)

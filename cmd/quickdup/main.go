@@ -290,29 +290,11 @@ func main() {
 	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by score)\n\n", len(matches), *minOccur, top)
 
 	for _, m := range matches[:top] {
-		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		fmt.Printf("Score %d [%d lines, %d unique] found %d times:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations))
-		fmt.Printf("┌─────────────────────────────────────\n")
-		for _, entry := range m.Pattern {
-			indent := ""
-			if entry.IndentDelta > 0 {
-				indent = fmt.Sprintf("+%d", entry.IndentDelta)
-			} else {
-				indent = fmt.Sprintf("%d", entry.IndentDelta)
-			}
-			fmt.Printf("│ %3s  %s\n", indent, entry.Word)
-		}
-		fmt.Printf("└─────────────────────────────────────\n")
+		fmt.Printf("\nScore %d [%d lines, %d unique] found %d times:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations))
 		fmt.Printf("Locations:\n")
-		maxLocs := 5
-		for i, loc := range m.Locations {
-			if i >= maxLocs {
-				fmt.Printf("  ... and %d more\n", len(m.Locations)-maxLocs)
-				break
-			}
+		for _, loc := range m.Locations {
 			fmt.Printf("  • %s:%d\n", loc.Filename, loc.LineStart)
 		}
-		fmt.Println()
 	}
 
 	fmt.Printf("Total: %d duplicate patterns\n", len(matches))

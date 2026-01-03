@@ -24,9 +24,10 @@ type PatternLocation struct {
 }
 
 type PatternMatch struct {
-	Hash      uint64
-	Locations []PatternLocation
-	Pattern   []IndentAndWord // representative pattern (first occurrence)
+	Hash        uint64
+	Locations   []PatternLocation
+	Pattern     []IndentAndWord // representative pattern (first occurrence)
+	UniqueWords int             // score: number of unique words in pattern
 }
 
 // Separators for word extraction
@@ -213,10 +214,12 @@ func main() {
 			continue
 		}
 		if len(locs) >= *minOccur {
+			pattern := locs[0].Pattern
 			matches = append(matches, PatternMatch{
-				Hash:      hash,
-				Locations: locs,
-				Pattern:   locs[0].Pattern,
+				Hash:        hash,
+				Locations:   locs,
+				Pattern:     pattern,
+				UniqueWords: countUniqueWords(pattern),
 			})
 		}
 	}
@@ -224,8 +227,11 @@ func main() {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}
 
-	// Sort by pattern length (descending), then by occurrences
+	// Sort by: unique words (desc), then pattern length (desc), then occurrences (desc)
 	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].UniqueWords != matches[j].UniqueWords {
+			return matches[i].UniqueWords > matches[j].UniqueWords
+		}
 		if len(matches[i].Pattern) != len(matches[j].Pattern) {
 			return len(matches[i].Pattern) > len(matches[j].Pattern)
 		}
@@ -242,7 +248,7 @@ func main() {
 
 	for _, m := range matches[:top] {
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		fmt.Printf("Pattern [%d lines] found %d times:\n", len(m.Pattern), len(m.Locations))
+		fmt.Printf("Pattern [%d lines, %d unique words] found %d times:\n", len(m.Pattern), m.UniqueWords, len(m.Locations))
 		fmt.Printf("┌─────────────────────────────────────\n")
 		for _, entry := range m.Pattern {
 			indent := ""
@@ -373,6 +379,15 @@ func extractFirstWord(line string) string {
 	}
 
 	return trimmed[:end]
+}
+
+// Count unique words in a pattern
+func countUniqueWords(pattern []IndentAndWord) int {
+	seen := make(map[string]bool)
+	for _, entry := range pattern {
+		seen[entry.Word] = true
+	}
+	return len(seen)
 }
 
 // Symbols that don't count as "real" starting words

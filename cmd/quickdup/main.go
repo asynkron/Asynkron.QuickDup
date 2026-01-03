@@ -416,9 +416,10 @@ func main() {
 			for _, other := range m.Locations[1:] {
 				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
 			}
-			msg := fmt.Sprintf("Duplicate code (%d lines, %.0f%% similar, score %d) also at: %s",
-				len(m.Pattern), m.Similarity*100, m.Score, strings.Join(otherLocs, ", "))
-			fmt.Printf("::warning file=%s,line=%d::%s\n", loc.Filename, loc.LineStart, msg)
+			endLine := loc.LineStart + len(m.Pattern) - 1
+			msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
+			fmt.Printf("::warning file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
+				loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Score, msg)
 		}
 		fmt.Printf("\n")
 	}

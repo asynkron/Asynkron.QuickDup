@@ -358,6 +358,77 @@ func main() {
 	}
 
 	fmt.Printf("Results written to: %s\n", outputPath)
+
+	// Write raw patterns file with actual code
+	rawPath := filepath.Join(outputDir, "patterns.md")
+	if err := writeRawPatterns(rawPath, matches); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing patterns file: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Raw patterns written to: %s\n", rawPath)
+}
+
+// Extract lines from a file given start line and count
+func extractLines(filename string, startLine, count int) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		if lineNum >= startLine && lineNum < startLine+count {
+			lines = append(lines, scanner.Text())
+		}
+		if lineNum >= startLine+count {
+			break
+		}
+	}
+	return lines, scanner.Err()
+}
+
+func writeRawPatterns(path string, matches []PatternMatch) error {
+	var sb strings.Builder
+
+	sb.WriteString("# Duplicate Code Patterns\n\n")
+	sb.WriteString("This file contains actual code snippets for each detected pattern.\n")
+	sb.WriteString("Review these to determine if they represent refactorable duplications.\n\n")
+
+	for i, m := range matches {
+		sb.WriteString(fmt.Sprintf("---\n\n## Pattern %d (Score: %d, Occurrences: %d)\n\n", i+1, m.Score, len(m.Locations)))
+
+		// Show up to 4 occurrences
+		maxShow := 4
+		if len(m.Locations) < maxShow {
+			maxShow = len(m.Locations)
+		}
+
+		for j := 0; j < maxShow; j++ {
+			loc := m.Locations[j]
+			sb.WriteString(fmt.Sprintf("### %s:%d\n\n", loc.Filename, loc.LineStart))
+			sb.WriteString("```\n")
+
+			lines, err := extractLines(loc.Filename, loc.LineStart, len(m.Pattern)+2) // +2 for context
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("// Error reading file: %v\n", err))
+			} else {
+				for _, line := range lines {
+					sb.WriteString(line + "\n")
+				}
+			}
+			sb.WriteString("```\n\n")
+		}
+
+		if len(m.Locations) > maxShow {
+			sb.WriteString(fmt.Sprintf("*... and %d more occurrences*\n\n", len(m.Locations)-maxShow))
+		}
+	}
+
+	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {

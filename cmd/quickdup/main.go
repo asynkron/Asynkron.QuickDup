@@ -39,6 +39,7 @@ type JSONLocation struct {
 }
 
 type JSONPattern struct {
+	Hash        string         `json:"hash"`
 	Score       int            `json:"score"`
 	Lines       int            `json:"lines"`
 	UniqueWords int            `json:"unique_words"`
@@ -329,6 +330,7 @@ func main() {
 		}
 
 		jsonOutput.Patterns = append(jsonOutput.Patterns, JSONPattern{
+			Hash:        fmt.Sprintf("%016x", m.Hash),
 			Score:       m.Score,
 			Lines:       len(m.Pattern),
 			UniqueWords: m.UniqueWords,
@@ -399,7 +401,7 @@ func writeRawPatterns(path string, matches []PatternMatch) error {
 	sb.WriteString("Review these to determine if they represent refactorable duplications.\n\n")
 
 	for i, m := range matches {
-		sb.WriteString(fmt.Sprintf("---\n\n## Pattern %d (Score: %d, Occurrences: %d)\n\n", i+1, m.Score, len(m.Locations)))
+		sb.WriteString(fmt.Sprintf("---\n\n## Pattern %d [%016x] (Score: %d, Occurrences: %d)\n\n", i+1, m.Hash, m.Score, len(m.Locations)))
 
 		// Show up to 4 occurrences
 		maxShow := 4

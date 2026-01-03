@@ -105,6 +105,18 @@ quickdup -path . -ext .ts -top 20 -min 5
 | `-top` | `10` | Show top N patterns by score |
 | `-comment` | auto | Override comment prefix (auto-detected by extension) |
 | `-no-cache` | `false` | Disable incremental caching, force full re-parse |
+| `-github-annotations` | `false` | Output GitHub Actions annotations for inline PR comments |
+
+## GitHub Actions Integration
+
+QuickDup can output annotations that GitHub displays as inline comments on pull requests:
+
+```yaml
+- name: Run QuickDup
+  run: quickdup -path . -ext .go --github-annotations --no-cache
+```
+
+When `--github-annotations` is enabled, QuickDup outputs warnings in GitHub's annotation format and skips writing `.quickdup/results.json` and `patterns.md`.
 
 ## Incremental Caching
 

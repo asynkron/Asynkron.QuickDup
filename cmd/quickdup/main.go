@@ -470,6 +470,11 @@ func main() {
 		summaryStyle.Render(fmt.Sprintf("%d", totalLines)),
 		summaryStyle.Render(elapsed.Round(time.Millisecond).String()))
 
+	// Skip file output in GitHub Actions mode
+	if *githubAnnotations {
+		return
+	}
+
 	// Build JSON output (includes ALL patterns, not just top N)
 	jsonOutput := JSONOutput{
 		TotalPatterns: len(matches),

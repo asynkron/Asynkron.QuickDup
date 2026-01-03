@@ -145,6 +145,7 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
+	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	flag.Parse()
 
@@ -223,14 +224,23 @@ func main() {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}
 
-	// Sort by number of occurrences (descending)
+	// Sort by pattern length (descending), then by occurrences
 	sort.Slice(matches, func(i, j int) bool {
+		if len(matches[i].Pattern) != len(matches[j].Pattern) {
+			return len(matches[i].Pattern) > len(matches[j].Pattern)
+		}
 		return len(matches[i].Locations) > len(matches[j].Locations)
 	})
 
-	fmt.Printf("Found %d patterns with %d+ occurrences\n\n", len(matches), *minOccur)
+	// Limit to top N
+	top := *topN
+	if len(matches) < top {
+		top = len(matches)
+	}
 
-	for _, m := range matches {
+	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by length)\n\n", len(matches), *minOccur, top)
+
+	for _, m := range matches[:top] {
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		fmt.Printf("Pattern [%d lines] found %d times:\n", len(m.Pattern), len(m.Locations))
 		fmt.Printf("┌─────────────────────────────────────\n")
@@ -245,7 +255,12 @@ func main() {
 		}
 		fmt.Printf("└─────────────────────────────────────\n")
 		fmt.Printf("Locations:\n")
-		for _, loc := range m.Locations {
+		maxLocs := 5
+		for i, loc := range m.Locations {
+			if i >= maxLocs {
+				fmt.Printf("  ... and %d more\n", len(m.Locations)-maxLocs)
+				break
+			}
 			fmt.Printf("  • %s:%d\n", loc.Filename, loc.LineStart)
 		}
 		fmt.Println()

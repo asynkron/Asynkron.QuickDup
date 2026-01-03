@@ -113,20 +113,23 @@ The combination of **indent delta + first keyword** captures:
 
 It's language-agnostic (works on any indented language) and requires no parsing.
 
+## Installation
+
+```bash
+go install github.com/asynkron/Asynkron.QuickDup/cmd/quickdup@latest
+```
+
 ## Usage
 
 ```bash
-# Build
-go build -o codeclone .
-
 # Scan Go files in current directory
-./codeclone --path . --ext .go --min 3
+quickdup --path . --ext .go --min 3
 
 # Scan TypeScript files with higher threshold
-./codeclone --path ./src --ext .ts --min 5
+quickdup --path ./src --ext .ts --min 5
 
 # Scan C# files
-./codeclone --path ./src --ext .cs --min 3
+quickdup --path ./src --ext .cs --min 3
 ```
 
 ### Flags

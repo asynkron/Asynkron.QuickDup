@@ -19,9 +19,10 @@ type IndentAndWord struct {
 }
 
 type PatternLocation struct {
-	Filename  string
-	LineStart int
-	Pattern   []IndentAndWord // the actual pattern at this location
+	Filename   string
+	LineStart  int
+	EntryIndex int             // start position in entries array
+	Pattern    []IndentAndWord // the actual pattern at this location
 }
 
 type PatternMatch struct {
@@ -176,6 +177,7 @@ func main() {
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
 	minScore := flag.Int("min-score", 6, "Minimum score to report (uniqueWords + lines)")
+	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	flag.Parse()
@@ -236,9 +238,9 @@ func main() {
 	clearProgress()
 	fmt.Printf("Parsed %d files\n", len(fileData))
 
-	// Phase 2: Pattern detection
+	// Phase 2: Pattern detection with growth
 	fmt.Printf("Detecting patterns...\n")
-	patterns := detectPatterns(fileData, len(fileData))
+	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize)
 
 	// Filter and collect matches
 	var matches []PatternMatch
@@ -596,51 +598,120 @@ func isSymbolOnly(word string) bool {
 	return false
 }
 
-func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int) map[uint64][]PatternLocation {
-	patterns := make(map[uint64][]PatternLocation)
+func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccur int, minSize int) map[uint64][]PatternLocation {
+	allPatterns := make(map[uint64][]PatternLocation)
+
+	// Step 1: Generate all minSize-line patterns
+	fmt.Printf("Finding %d-line base patterns...\n", minSize)
+	basePatterns := make(map[uint64][]PatternLocation)
 
 	processed := 0
 	for filename, entries := range fileData {
 		n := len(entries)
 
-		for i := 0; i < n; i++ {
-			// Skip if first word is just a symbol
-			if isSymbolOnly(entries[i].Word) {
-				continue
-			}
+		for i := 0; i <= n-minSize; i++ {
+			window := entries[i : i+minSize]
+			hash := hashPattern(window)
 
-			// Window sizes from 2 to 10
-			maxJ := i + 10
-			if maxJ > n {
-				maxJ = n
-			}
+			// Copy window to avoid slice aliasing issues
+			patternCopy := make([]IndentAndWord, len(window))
+			copy(patternCopy, window)
 
-			for j := i + 2; j <= maxJ; j++ {
-				// Skip if last word is just a symbol
-				if isSymbolOnly(entries[j-1].Word) {
-					continue
-				}
-
-				window := entries[i:j]
-				hash := hashPattern(window)
-
-				// Copy window to avoid slice aliasing issues
-				patternCopy := make([]IndentAndWord, len(window))
-				copy(patternCopy, window)
-
-				patterns[hash] = append(patterns[hash], PatternLocation{
-					Filename:  filename,
-					LineStart: entries[i].LineNumber,
-					Pattern:   patternCopy,
-				})
-			}
+			basePatterns[hash] = append(basePatterns[hash], PatternLocation{
+				Filename:   filename,
+				LineStart:  entries[i].LineNumber,
+				EntryIndex: i,
+				Pattern:    patternCopy,
+			})
 		}
 		processed++
 		printProgress("Analyzing", processed, totalFiles)
 	}
 	clearProgress()
 
-	return patterns
+	// Step 2: Filter base patterns to >= minOccur
+	survivors := make(map[uint64][]PatternLocation)
+	for hash, locs := range basePatterns {
+		if len(locs) >= minOccur {
+			survivors[hash] = locs
+		}
+	}
+	fmt.Printf("  %d-line: %d patterns with %d+ occurrences\n", minSize, len(survivors), minOccur)
+
+	// Track previous generation for deferred symbol filtering
+	previousGen := survivors
+
+	// Step 3: Grow patterns by extending the window
+	currentLen := minSize
+	for len(survivors) > 0 {
+		currentLen++
+		nextPatterns := make(map[uint64][]PatternLocation)
+
+		// For each surviving location, try to extend by 1
+		for _, locs := range survivors {
+			for _, loc := range locs {
+				entries := fileData[loc.Filename]
+				endIdx := loc.EntryIndex + currentLen // new end index
+
+				// Check bounds
+				if endIdx > len(entries) {
+					continue
+				}
+
+				// Get the extended window and hash it
+				window := entries[loc.EntryIndex:endIdx]
+				hash := hashPattern(window)
+
+				// Copy window
+				patternCopy := make([]IndentAndWord, len(window))
+				copy(patternCopy, window)
+
+				nextPatterns[hash] = append(nextPatterns[hash], PatternLocation{
+					Filename:   loc.Filename,
+					LineStart:  loc.LineStart,
+					EntryIndex: loc.EntryIndex,
+					Pattern:    patternCopy,
+				})
+			}
+		}
+
+		// Now that we've grown, add previous generation to results (with symbol filter)
+		for hash, locs := range previousGen {
+			if len(locs) > 0 {
+				p := locs[0].Pattern
+				if !isSymbolOnly(p[0].Word) && !isSymbolOnly(p[len(p)-1].Word) {
+					allPatterns[hash] = locs
+				}
+			}
+		}
+
+		// Filter to >= minOccur for next growth iteration
+		survivors = make(map[uint64][]PatternLocation)
+		for hash, locs := range nextPatterns {
+			if len(locs) >= minOccur {
+				survivors[hash] = locs
+			}
+		}
+
+		if len(survivors) > 0 {
+			fmt.Printf("  %d-line: %d patterns with %d+ occurrences\n", currentLen, len(survivors), minOccur)
+		}
+
+		previousGen = survivors
+	}
+
+	// Add the final generation (which couldn't grow further)
+	for hash, locs := range previousGen {
+		if len(locs) > 0 {
+			p := locs[0].Pattern
+			if !isSymbolOnly(p[0].Word) && !isSymbolOnly(p[len(p)-1].Word) {
+				allPatterns[hash] = locs
+			}
+		}
+	}
+
+	fmt.Printf("Growth stopped at %d lines\n", currentLen-1)
+	return allPatterns
 }
 
 func hashPattern(window []IndentAndWord) uint64 {

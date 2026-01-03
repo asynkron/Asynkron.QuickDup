@@ -687,33 +687,16 @@ func filterOverlappingOccurrences(locs []PatternLocation, patternLen int) []Patt
 
 func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccur int, minSize int) map[uint64][]PatternLocation {
 	allPatterns := make(map[uint64][]PatternLocation)
+	numWorkers := runtime.NumCPU()
 
-	// Step 1: Generate all minSize-line patterns
-	basePatterns := make(map[uint64][]PatternLocation)
-
-	processed := 0
-	for filename, entries := range fileData {
-		n := len(entries)
-
-		for i := 0; i <= n-minSize; i++ {
-			window := entries[i : i+minSize]
-			hash := hashPattern(window)
-
-			// Copy window to avoid slice aliasing issues
-			patternCopy := make([]IndentAndWord, len(window))
-			copy(patternCopy, window)
-
-			basePatterns[hash] = append(basePatterns[hash], PatternLocation{
-				Filename:   filename,
-				LineStart:  entries[i].LineNumber,
-				EntryIndex: i,
-				Pattern:    patternCopy,
-			})
-		}
-		processed++
-		printProgress("Analyzing", processed, totalFiles)
+	// Build file list for parallel iteration
+	files := make([]string, 0, len(fileData))
+	for f := range fileData {
+		files = append(files, f)
 	}
-	clearProgress()
+
+	// Step 1: Generate base patterns in parallel (per file)
+	basePatterns := generateBasePatternsParallel(fileData, files, minSize, numWorkers)
 
 	// Step 2: Filter base patterns to >= minOccur
 	survivors := make(map[uint64][]PatternLocation)
@@ -722,50 +705,22 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 			survivors[hash] = locs
 		}
 	}
-	// Track previous generation for deferred processing
 	previousGen := survivors
 
 	// Step 3: Grow patterns by extending the window
 	currentLen := minSize
 	for len(survivors) > 0 {
 		currentLen++
-		nextPatterns := make(map[uint64][]PatternLocation)
 
-		// For each surviving location, try to extend by 1
-		for _, locs := range survivors {
-			for _, loc := range locs {
-				entries := fileData[loc.Filename]
-				endIdx := loc.EntryIndex + currentLen // new end index
+		// Extend all locations in parallel
+		nextPatterns := extendPatternsParallel(survivors, fileData, currentLen, numWorkers)
 
-				// Check bounds
-				if endIdx > len(entries) {
-					continue
-				}
-
-				// Get the extended window and hash it
-				window := entries[loc.EntryIndex:endIdx]
-				hash := hashPattern(window)
-
-				// Copy window
-				patternCopy := make([]IndentAndWord, len(window))
-				copy(patternCopy, window)
-
-				nextPatterns[hash] = append(nextPatterns[hash], PatternLocation{
-					Filename:   loc.Filename,
-					LineStart:  loc.LineStart,
-					EntryIndex: loc.EntryIndex,
-					Pattern:    patternCopy,
-				})
-			}
-		}
-
-		// Filter next generation to >= minOccur and track which occurrences grew
+		// Filter next generation and track which occurrences grew
 		grewToChild := make(map[OccurrenceKey]bool)
 		survivors = make(map[uint64][]PatternLocation)
 		for hash, locs := range nextPatterns {
 			if len(locs) >= minOccur {
 				survivors[hash] = locs
-				// Mark these occurrences as having grown into surviving children
 				for _, loc := range locs {
 					grewToChild[OccurrenceKey{loc.Filename, loc.EntryIndex}] = true
 				}
@@ -775,18 +730,13 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 		// Add previous generation to results, filtering out occurrences that grew
 		prevLen := currentLen - 1
 		for hash, locs := range previousGen {
-			// Filter out occurrences that grew into children
 			filteredLocs := make([]PatternLocation, 0, len(locs))
 			for _, loc := range locs {
 				if !grewToChild[OccurrenceKey{loc.Filename, loc.EntryIndex}] {
 					filteredLocs = append(filteredLocs, loc)
 				}
 			}
-
-			// Filter out adjacent/overlapping occurrences within same file
 			filteredLocs = filterOverlappingOccurrences(filteredLocs, prevLen)
-
-			// Only add if still meets minOccur
 			if len(filteredLocs) >= minOccur {
 				allPatterns[hash] = filteredLocs
 			}
@@ -797,6 +747,129 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 
 	fmt.Printf("Growth stopped at %d lines\n", currentLen-1)
 	return allPatterns
+}
+
+// generateBasePatternsParallel generates base patterns using parallel workers
+func generateBasePatternsParallel(fileData map[string][]IndentAndWord, files []string, minSize int, numWorkers int) map[uint64][]PatternLocation {
+	result := make(map[uint64][]PatternLocation)
+	var mu sync.Mutex
+	var completed atomic.Int64
+
+	work := make(chan string, len(files))
+	for _, f := range files {
+		work <- f
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			local := make(map[uint64][]PatternLocation)
+
+			for filename := range work {
+				entries := fileData[filename]
+				n := len(entries)
+
+				for i := 0; i <= n-minSize; i++ {
+					window := entries[i : i+minSize]
+					hash := hashPattern(window)
+					patternCopy := make([]IndentAndWord, len(window))
+					copy(patternCopy, window)
+
+					local[hash] = append(local[hash], PatternLocation{
+						Filename:   filename,
+						LineStart:  entries[i].LineNumber,
+						EntryIndex: i,
+						Pattern:    patternCopy,
+					})
+				}
+
+				n64 := completed.Add(1)
+				printProgress("Analyzing", int(n64), len(files))
+			}
+
+			// Merge local results
+			mu.Lock()
+			for hash, locs := range local {
+				result[hash] = append(result[hash], locs...)
+			}
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+	clearProgress()
+	return result
+}
+
+// extendPatternsParallel extends all surviving patterns by 1 line using parallel workers
+func extendPatternsParallel(survivors map[uint64][]PatternLocation, fileData map[string][]IndentAndWord, newLen int, numWorkers int) map[uint64][]PatternLocation {
+	// Collect all locations to extend
+	var allLocs []PatternLocation
+	for _, locs := range survivors {
+		allLocs = append(allLocs, locs...)
+	}
+
+	if len(allLocs) == 0 {
+		return make(map[uint64][]PatternLocation)
+	}
+
+	result := make(map[uint64][]PatternLocation)
+	var mu sync.Mutex
+
+	// Partition work
+	chunkSize := (len(allLocs) + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		if start >= len(allLocs) {
+			break
+		}
+		end := start + chunkSize
+		if end > len(allLocs) {
+			end = len(allLocs)
+		}
+		chunk := allLocs[start:end]
+
+		wg.Add(1)
+		go func(locs []PatternLocation) {
+			defer wg.Done()
+			local := make(map[uint64][]PatternLocation)
+
+			for _, loc := range locs {
+				entries := fileData[loc.Filename]
+				endIdx := loc.EntryIndex + newLen
+
+				if endIdx > len(entries) {
+					continue
+				}
+
+				window := entries[loc.EntryIndex:endIdx]
+				hash := hashPattern(window)
+				patternCopy := make([]IndentAndWord, len(window))
+				copy(patternCopy, window)
+
+				local[hash] = append(local[hash], PatternLocation{
+					Filename:   loc.Filename,
+					LineStart:  loc.LineStart,
+					EntryIndex: loc.EntryIndex,
+					Pattern:    patternCopy,
+				})
+			}
+
+			mu.Lock()
+			for hash, locs := range local {
+				result[hash] = append(result[hash], locs...)
+			}
+			mu.Unlock()
+		}(chunk)
+	}
+
+	wg.Wait()
+	return result
 }
 
 func hashPattern(window []IndentAndWord) uint64 {

@@ -1,3 +1,5 @@
+<img src="assets/images/logo.png" width="100%" />
+
 # QuickDup - Delta-Indent Clone Detection
 
 QuickDup is a fast structural code clone detector that identifies duplicate code patterns using indent-delta fingerprinting. Designed as a candidate generator for AI-assisted code review.

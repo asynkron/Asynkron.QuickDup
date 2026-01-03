@@ -8,8 +8,11 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -235,19 +238,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Phase 1: Parse all files with progress
-	fileData := make(map[string][]IndentAndWord)
-
-	fmt.Printf("Scanning %d files...\n", totalFiles)
-	for i, path := range files {
-		entries, err := parseFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\nWarning: could not parse %s: %v\n", path, err)
-			continue
-		}
-		fileData[path] = entries
-		printProgress("Parsing", i+1, totalFiles)
-	}
+	// Phase 1: Parse all files in parallel
+	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
+	fileData := parseFilesParallel(files)
 	clearProgress()
 	fmt.Printf("Parsed %d files\n", len(fileData))
 
@@ -445,6 +438,45 @@ func loadIgnoredHashes(dir string) int {
 		}
 	}
 	return count
+}
+
+// parseFilesParallel parses all files using a worker pool
+func parseFilesParallel(files []string) map[string][]IndentAndWord {
+	numWorkers := runtime.NumCPU()
+	results := make(map[string][]IndentAndWord)
+	var mu sync.Mutex
+	var completed atomic.Int64
+
+	// Create work channel
+	work := make(chan string, len(files))
+	for _, f := range files {
+		work <- f
+	}
+	close(work)
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range work {
+				entries, err := parseFile(path)
+				if err != nil {
+					continue // skip files that fail to parse
+				}
+				mu.Lock()
+				results[path] = entries
+				mu.Unlock()
+
+				n := completed.Add(1)
+				printProgress("Parsing", int(n), len(files))
+			}
+		}()
+	}
+
+	wg.Wait()
+	return results
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {

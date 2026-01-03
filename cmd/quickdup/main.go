@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -218,7 +219,22 @@ func main() {
 	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
+	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	flag.Parse()
+
+	// Build set of changed files if --git-diff is specified
+	changedFiles := make(map[string]bool)
+	if *gitDiff != "" {
+		cmd := exec.Command("git", "diff", "--name-only", *gitDiff)
+		output, err := cmd.Output()
+		if err == nil {
+			for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+				if line != "" {
+					changedFiles[line] = true
+				}
+			}
+		}
+	}
 
 	startTime := time.Now()
 
@@ -410,9 +426,14 @@ func main() {
 
 	// GitHub Actions annotations output
 	if *githubAnnotations {
+		annotationCount := 0
 		for _, m := range matches[:top] {
 			// Emit annotation for first location of each pattern
 			loc := m.Locations[0]
+			// Skip if --git-diff is set and file is not in changed files
+			if *gitDiff != "" && !changedFiles[loc.Filename] {
+				continue
+			}
 			otherLocs := make([]string, 0, len(m.Locations)-1)
 			for _, other := range m.Locations[1:] {
 				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
@@ -421,8 +442,11 @@ func main() {
 			msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
 			fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
 				*githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Score, msg)
+			annotationCount++
 		}
-		fmt.Printf("\n")
+		if annotationCount > 0 {
+			fmt.Printf("\n")
+		}
 	}
 
 	fmt.Printf("Found %s patterns with %d+ occurrences (showing top %d by score)\n\n",

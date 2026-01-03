@@ -11,13 +11,13 @@ In the AI era, the paradigm shifts:
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  Fast Heuristic │ ──▶ │    AI Agent     │ ──▶ │  Human Decision │
-│  (CodeClone)    │     │  (verification) │     │                 │
+│   (QuickDup)    │     │  (verification) │     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
    Candidates            Understanding           Action
    (noisy OK)            (filters + expands)     (final call)
 ```
 
-CodeClone is a **candidate generator**. It doesn't need to be precise — it needs to surface interesting patterns quickly. An AI agent can then:
+QuickDup is a **candidate generator**. It doesn't need to be precise — it needs to surface interesting patterns quickly. An AI agent can then:
 
 1. Read the actual code and verify semantic similarity
 2. Understand *why* code is duplicated
@@ -29,7 +29,7 @@ CodeClone is a **candidate generator**. It doesn't need to be precise — it nee
 
 ## Algorithm: Structural Shape Fingerprinting
 
-CodeClone uses a novel lightweight approach we call **Delta-Indent Clone Detection**:
+QuickDup uses a novel lightweight approach we call **Delta-Indent Clone Detection**:
 
 ### Phase 1: Parse Files
 

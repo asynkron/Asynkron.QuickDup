@@ -1,117 +1,71 @@
 # QuickDup - Delta-Indent Clone Detection
 
-QuickDup is a structural code clone detector that identifies **Type-2 and Type-3 clones** using indent-delta fingerprinting. It's designed as a fast candidate generator for AI-assisted code review.
+QuickDup is a fast structural code clone detector that identifies duplicate code patterns using indent-delta fingerprinting. Designed as a candidate generator for AI-assisted code review.
+
+## Performance
+
+- **~100k lines of code in ~1.5 seconds** on 8 cores
+- Parallel file parsing and pattern detection
+- Lightweight fingerprinting (no AST parsing)
 
 ## Philosophy
 
-Traditional clone detection tools optimize for **precision** — minimizing false positives so humans can act directly on results. This made sense when humans were the bottleneck.
-
-In the AI era, the paradigm shifts:
+Traditional clone detection optimizes for **precision** — minimizing false positives. QuickDup optimizes for **speed and recall** — surface candidates fast, let AI verify.
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Fast Heuristic │ ──▶ │    AI Agent     │ ──▶ │  Human Decision │
-│   (QuickDup)    │     │  (verification) │     │                 │
+│    QuickDup     │ ──▶ │    AI Agent     │ ──▶ │  Human Decision │
+│  (candidates)   │     │  (verification) │     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
-   Candidates            Understanding           Action
-   (noisy OK)            (filters + expands)     (final call)
 ```
 
-QuickDup is a **candidate generator**. It doesn't need to be precise — it needs to surface interesting patterns quickly. An AI agent can then:
+## Algorithm
 
-1. Read the actual code and verify semantic similarity
-2. Understand *why* code is duplicated
-3. Find related clones the fingerprint missed
-4. Suggest concrete refactoring strategies
-5. Implement the fix
+### Phase 1: Parse Files (Parallel)
 
-**Speed and recall over precision.** Let the AI do the reasoning.
-
-## Algorithm: Structural Shape Fingerprinting
-
-QuickDup uses a novel lightweight approach we call **Delta-Indent Clone Detection**:
-
-### Phase 1: Parse Files
-
-For each source file, scan line by line and extract:
+Extract structural fingerprint per line:
 
 | Field | Description |
 |-------|-------------|
-| `LineNumber` | Actual line number in file (for navigation) |
-| `IndentDelta` | Change in indentation from previous non-empty line |
-| `Word` | First token on the line (keyword, brace, identifier) |
+| `IndentDelta` | Change in indentation from previous line |
+| `Word` | First token on the line |
+| `SourceLine` | Original source for output |
 
-**Key design choices:**
+Comments and blank lines are skipped. Comment prefixes are auto-detected by file extension.
 
-- **Indent delta, not absolute indent** — Captures the *shape* of code (nesting depth changes)
-- **Tabs = 4 spaces** — Normalized indentation
-- **Whitespace-only lines skipped** — But line numbers preserved
-- **First word only** — Lightweight, language-agnostic
-
-Example input:
+Example:
 ```go
-func foo() {           // line 1
-    if x {             // line 2
-        return true    // line 3
-    }                  // line 4
-}                      // line 5
+func foo() {           // delta=0   word="func"
+    if x {             // delta=+4  word="if"
+        return true    // delta=+4  word="return"
+    }                  // delta=-4  word="}"
+}                      // delta=-4  word="}"
 ```
 
-Parsed output:
-```
-Line 1:  delta=0   word="func"
-Line 2:  delta=+4  word="if"
-Line 3:  delta=+4  word="return"
-Line 4:  delta=-4  word="}"
-Line 5:  delta=-4  word="}"
-```
+### Phase 2: Grow-Based Pattern Detection (Parallel)
 
-### Phase 2: Pattern Detection
+1. Generate base patterns of minimum size (default: 3 lines)
+2. Keep patterns with 3+ occurrences
+3. Grow patterns by 1 line, repeat until no patterns survive
+4. Track which occurrences grew vs. stopped (only report maximal patterns)
 
-For each file's parsed entries:
+This finds the **longest** duplicate patterns, not just fixed windows.
 
-1. Slide a window of size 2-10 lines over the entries
-2. Hash each window: `hash(delta₁|word₁, delta₂|word₂, ...)`
-3. Store hash → list of (filename, line number) locations
+### Phase 3: Token Similarity Filter
 
-```
-For i := 0 to len(entries):
-    For windowSize := 2 to 10:
-        window := entries[i : i+windowSize]
-        hash := FNV64(window)
-        patterns[hash].append(Location{file, line})
-```
+Patterns with similar structure but different actual code are filtered:
 
-### Phase 3: Report Duplicates
+1. Tokenize source lines of each occurrence
+2. Compute Jaccard similarity (intersection/union of token sets)
+3. Filter patterns below threshold (default: 50%)
 
-Filter to patterns appearing N+ times (default: 3) and display:
+This eliminates false positives like "all error handlers look similar structurally but have different messages."
 
-```
-Pattern [7 lines] found 5 times:
-┌─────────────────────────────────────
-│   0  var
-│   0  while
-│  +4  if
-│  +4  return
-│  -4  }
-│   0  current
-│  -4  }
-└─────────────────────────────────────
-Locations:
-  • src/object.cs:249
-  • src/proxy.cs:344
-  • src/iterator.cs:154
-```
+### Phase 4: Output
 
-## Why This Works
-
-The combination of **indent delta + first keyword** captures:
-
-- **Control flow structure** — `if`, `for`, `while`, `switch` patterns
-- **Block nesting shape** — How deeply code nests and unnests
-- **Common idioms** — Guard clauses, early returns, cleanup patterns
-
-It's language-agnostic (works on any indented language) and requires no parsing.
+Results written to `.quickdup/` directory:
+- `results.json` — Machine-readable patterns with locations
+- `patterns.md` — Human-readable code snippets
 
 ## Installation
 
@@ -123,32 +77,85 @@ go install github.com/asynkron/Asynkron.QuickDup/cmd/quickdup@latest
 
 ```bash
 # Scan Go files in current directory
-quickdup --path . --ext .go --min 3
+quickdup -path . -ext .go
 
-# Scan TypeScript files with higher threshold
-quickdup --path ./src --ext .ts --min 5
+# Scan C# files with stricter similarity threshold
+quickdup -path ./src -ext .cs -min-similarity 0.7
 
-# Scan C# files
-quickdup --path ./src --ext .cs --min 3
+# Show top 20 patterns, require 5+ occurrences
+quickdup -path . -ext .ts -top 20 -min 5
 ```
 
-### Flags
+## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--path` | `.` | Directory to scan recursively |
-| `--ext` | `.go` | File extension to match |
-| `--min` | `3` | Minimum occurrences to report |
+| `-path` | `.` | Directory to scan recursively |
+| `-ext` | `.go` | File extension to match |
+| `-min` | `3` | Minimum occurrences to report |
+| `-min-size` | `3` | Base pattern size (lines) to start growing from |
+| `-min-score` | `3` | Minimum unique words in pattern |
+| `-min-similarity` | `0.5` | Minimum token similarity between occurrences (0.0-1.0) |
+| `-top` | `10` | Show top N patterns by score |
+| `-comment` | auto | Override comment prefix (auto-detected by extension) |
+
+## Ignoring Patterns
+
+Create `.quickdup/ignore.json` to suppress known patterns:
+
+```json
+{
+  "description": "Patterns to ignore",
+  "ignored": [
+    "56c2f5f9b27ed5a0",
+    "c32ca0ee344f8e23"
+  ]
+}
+```
+
+Pattern hashes are shown in the output for easy copy-paste.
+
+## Supported Languages
+
+Comment prefixes are auto-detected for:
+
+- **C-style** (`//`): Go, C, C++, Java, JavaScript, TypeScript, C#, Swift, Kotlin, Rust, PHP, Dart, Zig
+- **Hash** (`#`): Python, Ruby, Shell, Perl, R, YAML, TOML, PowerShell, Nim, Julia, Elixir
+- **Double-dash** (`--`): SQL, Lua, Haskell, Elm, Ada, VHDL
+- **Semicolon** (`;`): Lisp, Clojure, Scheme, Assembly
+- **Percent** (`%`): LaTeX, MATLAB, Erlang, Prolog
+
+Use `-comment` to override for unsupported extensions.
+
+## Example Output
+
+```
+Scanning 558 files using 8 workers...
+Parsed 558 files (98234 lines of code)
+Detecting patterns...
+Growth stopped at 148 lines
+Filtered 23 low-similarity patterns (similarity < 50%)
+Found 2410 patterns with 3+ occurrences (showing top 10 by score)
+
+Score 15 [79 lines, 15 unique] found 3 times [a1b2c3d4e5f67890]:
+  src/services/auth.go:142
+  src/services/oauth.go:89
+  src/services/saml.go:201
+
+...
+
+Total: 2410 duplicate patterns in 558 files (98234 lines) in 1.523s
+```
 
 ## Limitations
 
-This is a **heuristic candidate generator**, not a precise clone detector:
+This is a **heuristic candidate generator**:
 
-- **False positives** — Common idioms (guard clauses, error handling) will match
-- **False negatives** — Semantically identical code with different structure won't match
+- **False positives** — Structural similarity doesn't guarantee semantic duplication
+- **False negatives** — Different structure with same semantics won't match
 - **First word only** — `if x > 0` and `if y < 0` look identical
 
-These are acceptable trade-offs when an AI agent handles verification.
+The token similarity filter catches most structural false positives. For the rest, let AI verify.
 
 ## License
 

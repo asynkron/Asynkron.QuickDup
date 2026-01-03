@@ -98,6 +98,17 @@ quickdup -path . -ext .ts -top 20 -min 5
 | `-min-similarity` | `0.5` | Minimum token similarity between occurrences (0.0-1.0) |
 | `-top` | `10` | Show top N patterns by score |
 | `-comment` | auto | Override comment prefix (auto-detected by extension) |
+| `-no-cache` | `false` | Disable incremental caching, force full re-parse |
+
+## Incremental Caching
+
+QuickDup caches parsed file data in `.quickdup/cache.gob`. On subsequent runs, only modified files are re-parsed:
+
+```
+Parsed 558 files (542 cached, 16 parsed) (98234 lines of code)
+```
+
+This dramatically speeds up repeated runs during development. Use `-no-cache` to force a full re-parse.
 
 ## Ignoring Patterns
 

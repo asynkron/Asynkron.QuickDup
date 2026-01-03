@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/gob"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -76,6 +77,20 @@ type IgnoreFile struct {
 	Description string   `json:"description"`
 	Ignored     []string `json:"ignored"`
 }
+
+// CachedFile stores parsed entries with mod time for incremental parsing
+type CachedFile struct {
+	ModTime int64
+	Entries []IndentAndWord
+}
+
+// FileCache stores all cached file data
+type FileCache struct {
+	Version int // cache format version for invalidation
+	Files   map[string]CachedFile
+}
+
+const cacheVersion = 1
 
 // Separators for word extraction
 const separators = " \t:.;{}()[]#!<>=,\n\r"
@@ -198,6 +213,7 @@ func main() {
 	minSimilarity := flag.Float64("min-similarity", 0.5, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
+	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
 	flag.Parse()
 
 	startTime := time.Now()
@@ -242,17 +258,33 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Phase 1: Parse all files in parallel
+	// Phase 1: Parse all files in parallel (with caching)
 	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
-	fileData := parseFilesParallel(files)
+
+	var cache *FileCache
+	if !*noCache {
+		cache = loadCache(folder)
+	}
+
+	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
 	clearProgress()
+
+	// Save updated cache
+	if !*noCache && cacheMisses > 0 {
+		saveCache(folder, files, fileData)
+	}
 
 	// Count total lines of code (non-blank, non-comment)
 	totalLines := 0
 	for _, entries := range fileData {
 		totalLines += len(entries)
 	}
-	fmt.Printf("Parsed %d files (%d lines of code)\n", len(fileData), totalLines)
+
+	if cacheHits > 0 {
+		fmt.Printf("Parsed %d files (%d cached, %d parsed) (%d lines of code)\n", len(fileData), cacheHits, cacheMisses, totalLines)
+	} else {
+		fmt.Printf("Parsed %d files (%d lines of code)\n", len(fileData), totalLines)
+	}
 
 	// Phase 2: Pattern detection with growth
 	fmt.Printf("Detecting patterns...\n")
@@ -465,12 +497,75 @@ func loadIgnoredHashes(dir string) int {
 	return count
 }
 
-// parseFilesParallel parses all files using a worker pool
-func parseFilesParallel(files []string) map[string][]IndentAndWord {
+// loadCache loads the file cache from disk
+func loadCache(dir string) *FileCache {
+	cachePath := filepath.Join(dir, ".quickdup", "cache.gob")
+	file, err := os.Open(cachePath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	var cache FileCache
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&cache); err != nil {
+		return nil
+	}
+
+	// Check version
+	if cache.Version != cacheVersion {
+		return nil
+	}
+
+	return &cache
+}
+
+// saveCache saves the file cache to disk
+func saveCache(dir string, files []string, fileData map[string][]IndentAndWord) {
+	// Build cache from current file data
+	cache := FileCache{
+		Version: cacheVersion,
+		Files:   make(map[string]CachedFile),
+	}
+
+	for _, path := range files {
+		entries, ok := fileData[path]
+		if !ok {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		cache.Files[path] = CachedFile{
+			ModTime: info.ModTime().UnixNano(),
+			Entries: entries,
+		}
+	}
+
+	// Ensure directory exists
+	cacheDir := filepath.Join(dir, ".quickdup")
+	os.MkdirAll(cacheDir, 0755)
+
+	cachePath := filepath.Join(cacheDir, "cache.gob")
+	file, err := os.Create(cachePath)
+	if err != nil {
+		return // silently fail
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	encoder.Encode(cache)
+}
+
+// parseFilesWithCache parses files using cache when possible
+func parseFilesWithCache(files []string, cache *FileCache) (map[string][]IndentAndWord, int, int) {
 	numWorkers := runtime.NumCPU()
 	results := make(map[string][]IndentAndWord)
 	var mu sync.Mutex
 	var completed atomic.Int64
+	var cacheHits atomic.Int64
+	var cacheMisses atomic.Int64
 
 	// Create work channel
 	work := make(chan string, len(files))
@@ -486,10 +581,34 @@ func parseFilesParallel(files []string) map[string][]IndentAndWord {
 		go func() {
 			defer wg.Done()
 			for path := range work {
-				entries, err := parseFile(path)
-				if err != nil {
-					continue // skip files that fail to parse
+				var entries []IndentAndWord
+				var fromCache bool
+
+				// Check cache
+				if cache != nil {
+					if cached, ok := cache.Files[path]; ok {
+						info, err := os.Stat(path)
+						if err == nil && info.ModTime().UnixNano() == cached.ModTime {
+							entries = cached.Entries
+							fromCache = true
+						}
+					}
 				}
+
+				// Parse if not cached
+				if !fromCache {
+					var err error
+					entries, err = parseFile(path)
+					if err != nil {
+						n := completed.Add(1)
+						printProgress("Parsing", int(n), len(files))
+						continue // skip files that fail to parse
+					}
+					cacheMisses.Add(1)
+				} else {
+					cacheHits.Add(1)
+				}
+
 				mu.Lock()
 				results[path] = entries
 				mu.Unlock()
@@ -501,7 +620,7 @@ func parseFilesParallel(files []string) map[string][]IndentAndWord {
 	}
 
 	wg.Wait()
-	return results
+	return results, int(cacheHits.Load()), int(cacheMisses.Load())
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {

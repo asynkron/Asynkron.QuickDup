@@ -57,15 +57,16 @@ func foo() {           // delta=0   word="func"
 
 This finds the **longest** duplicate patterns, not just fixed windows.
 
-### Phase 3: Token Similarity Filter
+### Phase 3: Token Similarity & Scoring
 
 Patterns with similar structure but different actual code are filtered:
 
 1. Tokenize source lines of each occurrence
 2. Compute Jaccard similarity (intersection/union of token sets)
 3. Filter patterns below threshold (default: 50%)
+4. Score patterns: `uniqueWords + (similarity × 5)`
 
-This eliminates false positives like "all error handlers look similar structurally but have different messages."
+This eliminates false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
 
 ### Phase 4: Output
 
@@ -100,7 +101,7 @@ quickdup -path . -ext .ts -top 20 -min 5
 | `-ext` | `.go` | File extension to match |
 | `-min` | `3` | Minimum occurrences to report |
 | `-min-size` | `3` | Base pattern size (lines) to start growing from |
-| `-min-score` | `3` | Minimum unique words in pattern |
+| `-min-score` | `5` | Minimum score (unique words + similarity bonus) |
 | `-min-similarity` | `0.5` | Minimum token similarity between occurrences (0.0-1.0) |
 | `-top` | `10` | Show top N patterns by score |
 | `-comment` | auto | Override comment prefix (auto-detected by extension) |

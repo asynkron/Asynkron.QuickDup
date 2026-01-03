@@ -48,7 +48,8 @@ type PatternMatch struct {
 	Locations   []PatternLocation
 	Pattern     []IndentAndWord // representative pattern (first occurrence)
 	UniqueWords int             // number of unique words in pattern
-	Score       int             // combined score: uniqueWords + length
+	Similarity  float64         // average token similarity across occurrences (0.0-1.0)
+	Score       int             // combined score: uniqueWords + similarity bonus
 }
 
 // JSON output structures
@@ -62,6 +63,7 @@ type JSONPattern struct {
 	Score       int            `json:"score"`
 	Lines       int            `json:"lines"`
 	UniqueWords int            `json:"unique_words"`
+	Similarity  float64        `json:"similarity"`
 	Occurrences int            `json:"occurrences"`
 	Pattern     []string       `json:"pattern"`
 	Locations   []JSONLocation `json:"locations"`
@@ -208,7 +210,7 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 3, "Minimum score to report (uniqueWords)")
+	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords + similarity bonus)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	minSimilarity := flag.Float64("min-similarity", 0.5, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
@@ -308,7 +310,6 @@ func main() {
 	}
 	var candidates []candidate
 	skippedBlocked := 0
-	skippedLowScore := 0
 	for hash, locs := range patterns {
 		if blockedHashes[hash] {
 			skippedBlocked++
@@ -317,12 +318,11 @@ func main() {
 		if len(locs) >= *minOccur {
 			pattern := locs[0].Pattern
 			uniqueWords := countUniqueWords(pattern)
-			score := uniqueWords
-			if score < *minScore {
-				skippedLowScore++
+			// Pre-filter: need at least 3 unique words to be worth computing similarity
+			if uniqueWords < 3 {
 				continue
 			}
-			candidates = append(candidates, candidate{hash, locs, pattern, uniqueWords, score})
+			candidates = append(candidates, candidate{hash, locs, pattern, uniqueWords, 0})
 		}
 	}
 
@@ -353,21 +353,29 @@ func main() {
 	}
 	wg.Wait()
 
-	// Collect matches that pass similarity threshold
+	// Collect matches that pass similarity and score thresholds
 	var matches []PatternMatch
 	skippedLowSimilarity := 0
+	skippedLowScore := 0
 	for _, r := range results {
 		if r.similarity < *minSimilarity {
 			skippedLowSimilarity++
 			continue
 		}
 		c := candidates[r.index]
+		// Score = uniqueWords + similarity bonus (0-5 points for 0-100% similarity)
+		score := c.uniqueWords + int(r.similarity*5)
+		if score < *minScore {
+			skippedLowScore++
+			continue
+		}
 		matches = append(matches, PatternMatch{
 			Hash:        c.hash,
 			Locations:   c.locs,
 			Pattern:     c.pattern,
 			UniqueWords: c.uniqueWords,
-			Score:       c.score,
+			Similarity:  r.similarity,
+			Score:       score,
 		})
 	}
 	filterTime := time.Since(filterStart)
@@ -383,7 +391,7 @@ func main() {
 		fmt.Printf("Filtered %d low-similarity patterns (similarity < %.0f%%)\n", skippedLowSimilarity, *minSimilarity*100)
 	}
 
-	// Sort by combined score (uniqueWords + length), descending
+	// Sort by combined score (uniqueWords + similarity bonus), descending
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].Score > matches[j].Score
 	})
@@ -403,8 +411,8 @@ func main() {
 			for _, other := range m.Locations[1:] {
 				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
 			}
-			msg := fmt.Sprintf("Duplicate code (%d lines, score %d) also at: %s",
-				len(m.Pattern), m.Score, strings.Join(otherLocs, ", "))
+			msg := fmt.Sprintf("Duplicate code (%d lines, %.0f%% similar, score %d) also at: %s",
+				len(m.Pattern), m.Similarity*100, m.Score, strings.Join(otherLocs, ", "))
 			fmt.Printf("::warning file=%s,line=%d::%s\n", loc.Filename, loc.LineStart, msg)
 		}
 		fmt.Printf("\n")
@@ -414,9 +422,10 @@ func main() {
 		summaryStyle.Render(fmt.Sprintf("%d", len(matches))), *minOccur, top)
 
 	for _, m := range matches[:top] {
-		fmt.Printf("\n%s %s %s %s:\n",
+		fmt.Printf("\n%s %s %s %s %s:\n",
 			scoreStyle.Render(fmt.Sprintf("Score %d", m.Score)),
 			dimStyle.Render(fmt.Sprintf("[%d lines, %d unique]", len(m.Pattern), m.UniqueWords)),
+			dimStyle.Render(fmt.Sprintf("%.0f%% similar", m.Similarity*100)),
 			dimStyle.Render(fmt.Sprintf("found %d times", len(m.Locations))),
 			hashStyle.Render(fmt.Sprintf("[%016x]", m.Hash)))
 		for _, loc := range m.Locations {
@@ -506,6 +515,7 @@ func main() {
 			Score:       m.Score,
 			Lines:       len(m.Pattern),
 			UniqueWords: m.UniqueWords,
+			Similarity:  m.Similarity,
 			Occurrences: len(m.Locations),
 			Pattern:     patternStrs,
 			Locations:   locs,

@@ -407,6 +407,11 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int) map[uin
 			}
 
 			for j := i + 2; j <= maxJ; j++ {
+				// Skip if last word is just a symbol
+				if isSymbolOnly(entries[j-1].Word) {
+					continue
+				}
+
 				window := entries[i:j]
 				hash := hashPattern(window)
 

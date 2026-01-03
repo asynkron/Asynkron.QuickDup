@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -199,6 +200,8 @@ func main() {
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	flag.Parse()
 
+	startTime := time.Now()
+
 	// Auto-detect comment prefix from extension, allow override
 	if *comment != "" {
 		commentPrefix = *comment
@@ -326,10 +329,12 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nTotal: %s duplicate patterns in %s files (%s lines)\n",
+	elapsed := time.Since(startTime)
+	fmt.Printf("\nTotal: %s duplicate patterns in %s files (%s lines) in %s\n",
 		summaryStyle.Render(fmt.Sprintf("%d", len(matches))),
 		summaryStyle.Render(fmt.Sprintf("%d", len(fileData))),
-		summaryStyle.Render(fmt.Sprintf("%d", totalLines)))
+		summaryStyle.Render(fmt.Sprintf("%d", totalLines)),
+		summaryStyle.Render(elapsed.Round(time.Millisecond).String()))
 
 	// Build JSON output (includes ALL patterns, not just top N)
 	jsonOutput := JSONOutput{

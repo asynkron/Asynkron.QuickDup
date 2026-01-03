@@ -1,0 +1,250 @@
+package main
+
+import (
+	"bufio"
+	"flag"
+	"fmt"
+	"hash/fnv"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type IndentAndWord struct {
+	LineNumber  int
+	IndentDelta int
+	Word        string
+}
+
+type PatternLocation struct {
+	Filename  string
+	LineStart int
+	Pattern   []IndentAndWord // the actual pattern at this location
+}
+
+type PatternMatch struct {
+	Hash      uint64
+	Locations []PatternLocation
+	Pattern   []IndentAndWord // representative pattern (first occurrence)
+}
+
+// Separators for word extraction
+const separators = " \t:.;{}()[]#!<>=,\n\r"
+
+func main() {
+	path := flag.String("path", ".", "Path to scan")
+	ext := flag.String("ext", ".go", "File extension to scan")
+	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
+	flag.Parse()
+
+	folder := *path
+	extension := *ext
+
+	// Phase 1: Parse all files
+	fileData := make(map[string][]IndentAndWord)
+
+	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, extension) {
+			entries, err := parseFile(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", path, err)
+				return nil
+			}
+			fileData[path] = entries
+		}
+		return nil
+	})
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error walking directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Parsed %d files\n", len(fileData))
+
+	// Phase 2: Pattern detection
+	patterns := detectPatterns(fileData)
+
+	// Filter and collect matches
+	var matches []PatternMatch
+	for hash, locs := range patterns {
+		if len(locs) >= *minOccur {
+			matches = append(matches, PatternMatch{
+				Hash:      hash,
+				Locations: locs,
+				Pattern:   locs[0].Pattern,
+			})
+		}
+	}
+
+	// Sort by number of occurrences (descending)
+	sort.Slice(matches, func(i, j int) bool {
+		return len(matches[i].Locations) > len(matches[j].Locations)
+	})
+
+	fmt.Printf("Found %d patterns with %d+ occurrences\n\n", len(matches), *minOccur)
+
+	for _, m := range matches {
+		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		fmt.Printf("Pattern [%d lines] found %d times:\n", len(m.Pattern), len(m.Locations))
+		fmt.Printf("┌─────────────────────────────────────\n")
+		for _, entry := range m.Pattern {
+			indent := ""
+			if entry.IndentDelta > 0 {
+				indent = fmt.Sprintf("+%d", entry.IndentDelta)
+			} else {
+				indent = fmt.Sprintf("%d", entry.IndentDelta)
+			}
+			fmt.Printf("│ %3s  %s\n", indent, entry.Word)
+		}
+		fmt.Printf("└─────────────────────────────────────\n")
+		fmt.Printf("Locations:\n")
+		for _, loc := range m.Locations {
+			fmt.Printf("  • %s:%d\n", loc.Filename, loc.LineStart)
+		}
+		fmt.Println()
+	}
+
+	fmt.Printf("Total: %d duplicate patterns\n", len(matches))
+}
+
+func parseFile(path string) ([]IndentAndWord, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var entries []IndentAndWord
+	scanner := bufio.NewScanner(file)
+	lineNumber := 0
+	prevIndent := 0
+
+	for scanner.Scan() {
+		lineNumber++
+		line := scanner.Text()
+
+		// Skip whitespace-only lines
+		if isWhitespaceOnly(line) {
+			continue
+		}
+
+		indent := calculateIndent(line)
+		word := extractFirstWord(line)
+
+		indentDelta := indent - prevIndent
+		prevIndent = indent
+
+		entries = append(entries, IndentAndWord{
+			LineNumber:  lineNumber,
+			IndentDelta: indentDelta,
+			Word:        word,
+		})
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+func isWhitespaceOnly(line string) bool {
+	for _, r := range line {
+		if r != ' ' && r != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+func calculateIndent(line string) int {
+	indent := 0
+	for _, r := range line {
+		switch r {
+		case ' ':
+			indent++
+		case '\t':
+			indent += 4
+		default:
+			return indent
+		}
+	}
+	return indent
+}
+
+func extractFirstWord(line string) string {
+	// Skip leading whitespace
+	start := 0
+	for i, r := range line {
+		if r != ' ' && r != '\t' {
+			start = i
+			break
+		}
+	}
+
+	// Find end of word (first separator)
+	trimmed := line[start:]
+	end := len(trimmed)
+	for i, r := range trimmed {
+		if strings.ContainsRune(separators, r) {
+			end = i
+			break
+		}
+	}
+
+	// If no word found (line starts with separator), use the first character
+	if end == 0 && len(trimmed) > 0 {
+		return string(trimmed[0])
+	}
+
+	return trimmed[:end]
+}
+
+func detectPatterns(fileData map[string][]IndentAndWord) map[uint64][]PatternLocation {
+	patterns := make(map[uint64][]PatternLocation)
+
+	for filename, entries := range fileData {
+		n := len(entries)
+
+		for i := 0; i < n; i++ {
+			// Window sizes from 2 to 10
+			maxJ := i + 10
+			if maxJ > n {
+				maxJ = n
+			}
+
+			for j := i + 2; j <= maxJ; j++ {
+				window := entries[i:j]
+				hash := hashPattern(window)
+
+				// Copy window to avoid slice aliasing issues
+				patternCopy := make([]IndentAndWord, len(window))
+				copy(patternCopy, window)
+
+				patterns[hash] = append(patterns[hash], PatternLocation{
+					Filename:  filename,
+					LineStart: entries[i].LineNumber,
+					Pattern:   patternCopy,
+				})
+			}
+		}
+	}
+
+	return patterns
+}
+
+func hashPattern(window []IndentAndWord) uint64 {
+	h := fnv.New64a()
+
+	for _, entry := range window {
+		// Write indent delta as bytes
+		fmt.Fprintf(h, "%d|%s\n", entry.IndentDelta, entry.Word)
+	}
+
+	return h.Sum64()
+}

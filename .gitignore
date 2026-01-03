@@ -1,0 +1,8 @@
+# Binaries
+codeclone
+*.exe
+
+# IDE
+.idea/
+.vscode/
+

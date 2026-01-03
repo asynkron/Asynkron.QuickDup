@@ -53,6 +53,12 @@ type JSONOutput struct {
 	Patterns      []JSONPattern `json:"patterns"`
 }
 
+// IgnoreFile represents the structure of ignore.json
+type IgnoreFile struct {
+	Description string   `json:"description"`
+	Ignored     []string `json:"ignored"`
+}
+
 // Separators for word extraction
 const separators = " \t:.;{}()[]#!<>=,\n\r"
 
@@ -185,6 +191,11 @@ func main() {
 
 	folder := *path
 	extension := *ext
+
+	// Load user-ignored hashes from ignore.json
+	if ignored := loadIgnoredHashes(folder); ignored > 0 {
+		fmt.Printf("Loaded %d ignored patterns from ignore.json\n", ignored)
+	}
 
 	// First pass: count files
 	var files []string
@@ -431,6 +442,31 @@ func writeRawPatterns(path string, matches []PatternMatch) error {
 	}
 
 	return os.WriteFile(path, []byte(sb.String()), 0644)
+}
+
+// loadIgnoredHashes reads ignore.json and adds hashes to the blocked list
+func loadIgnoredHashes(dir string) int {
+	ignorePath := filepath.Join(dir, ".quickdup", "ignore.json")
+	data, err := os.ReadFile(ignorePath)
+	if err != nil {
+		return 0 // File doesn't exist or can't be read, that's fine
+	}
+
+	var ignoreFile IgnoreFile
+	if err := json.Unmarshal(data, &ignoreFile); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", ignorePath, err)
+		return 0
+	}
+
+	count := 0
+	for _, hashStr := range ignoreFile.Ignored {
+		var hash uint64
+		if _, err := fmt.Sscanf(hashStr, "%x", &hash); err == nil {
+			blockedHashes[hash] = true
+			count++
+		}
+	}
+	return count
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {

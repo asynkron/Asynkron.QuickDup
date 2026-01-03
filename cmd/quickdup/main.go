@@ -168,6 +168,7 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
+	minScore := flag.Int("min-score", 6, "Minimum score to report (uniqueWords + lines)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	flag.Parse()
@@ -230,6 +231,7 @@ func main() {
 	// Filter and collect matches
 	var matches []PatternMatch
 	skippedBlocked := 0
+	skippedLowScore := 0
 	for hash, locs := range patterns {
 		if blockedHashes[hash] {
 			skippedBlocked++
@@ -238,17 +240,25 @@ func main() {
 		if len(locs) >= *minOccur {
 			pattern := locs[0].Pattern
 			uniqueWords := countUniqueWords(pattern)
+			score := uniqueWords + len(pattern)
+			if score < *minScore {
+				skippedLowScore++
+				continue
+			}
 			matches = append(matches, PatternMatch{
 				Hash:        hash,
 				Locations:   locs,
 				Pattern:     pattern,
 				UniqueWords: uniqueWords,
-				Score:       uniqueWords + len(pattern),
+				Score:       score,
 			})
 		}
 	}
 	if skippedBlocked > 0 {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
+	}
+	if skippedLowScore > 0 {
+		fmt.Printf("Filtered %d low-score patterns (score < %d)\n", skippedLowScore, *minScore)
 	}
 
 	// Sort by combined score (uniqueWords + length), descending

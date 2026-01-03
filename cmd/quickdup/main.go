@@ -214,6 +214,7 @@ func main() {
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
+	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	flag.Parse()
 
 	startTime := time.Now()
@@ -391,6 +392,22 @@ func main() {
 	top := *topN
 	if len(matches) < top {
 		top = len(matches)
+	}
+
+	// GitHub Actions annotations output
+	if *githubAnnotations {
+		for _, m := range matches[:top] {
+			// Emit annotation for first location of each pattern
+			loc := m.Locations[0]
+			otherLocs := make([]string, 0, len(m.Locations)-1)
+			for _, other := range m.Locations[1:] {
+				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
+			}
+			msg := fmt.Sprintf("Duplicate code (%d lines, score %d) also at: %s",
+				len(m.Pattern), m.Score, strings.Join(otherLocs, ", "))
+			fmt.Printf("::warning file=%s,line=%d::%s\n", loc.Filename, loc.LineStart, msg)
+		}
+		fmt.Printf("\n")
 	}
 
 	fmt.Printf("Found %s patterns with %d+ occurrences (showing top %d by score)\n\n",

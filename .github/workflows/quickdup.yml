@@ -1,0 +1,24 @@
+name: QuickDup
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quickdup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build QuickDup
+        run: go build -o quickdup ./cmd/quickdup
+
+      - name: Run QuickDup on itself
+        run: ./quickdup -path . -ext .go --github-annotations --no-cache

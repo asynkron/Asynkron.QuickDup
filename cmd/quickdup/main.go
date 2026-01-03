@@ -638,7 +638,6 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 	allPatterns := make(map[uint64][]PatternLocation)
 
 	// Step 1: Generate all minSize-line patterns
-	fmt.Printf("Finding %d-line base patterns...\n", minSize)
 	basePatterns := make(map[uint64][]PatternLocation)
 
 	processed := 0
@@ -672,8 +671,6 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 			survivors[hash] = locs
 		}
 	}
-	fmt.Printf("  %d-line: %d patterns with %d+ occurrences\n", minSize, len(survivors), minOccur)
-
 	// Track previous generation for deferred processing
 	previousGen := survivors
 
@@ -742,10 +739,6 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 			if len(filteredLocs) >= minOccur {
 				allPatterns[hash] = filteredLocs
 			}
-		}
-
-		if len(survivors) > 0 {
-			fmt.Printf("  %d-line: %d patterns with %d+ occurrences\n", currentLen, len(survivors), minOccur)
 		}
 
 		previousGen = survivors

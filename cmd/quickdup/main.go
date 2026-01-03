@@ -10,6 +10,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+var (
+	// Styles
+	scoreStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	hashStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	locationStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	lineNumStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("221"))
+	summaryStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("82"))
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
 type IndentAndWord struct {
@@ -287,17 +299,24 @@ func main() {
 		top = len(matches)
 	}
 
-	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by score)\n\n", len(matches), *minOccur, top)
+	fmt.Printf("Found %s patterns with %d+ occurrences (showing top %d by score)\n\n",
+		summaryStyle.Render(fmt.Sprintf("%d", len(matches))), *minOccur, top)
 
 	for _, m := range matches[:top] {
-		fmt.Printf("\nScore %d [%d lines, %d unique] found %d times [%016x]:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations), m.Hash)
-		fmt.Printf("Locations:\n")
+		fmt.Printf("\n%s %s %s %s:\n",
+			scoreStyle.Render(fmt.Sprintf("Score %d", m.Score)),
+			dimStyle.Render(fmt.Sprintf("[%d lines, %d unique]", len(m.Pattern), m.UniqueWords)),
+			dimStyle.Render(fmt.Sprintf("found %d times", len(m.Locations))),
+			hashStyle.Render(fmt.Sprintf("[%016x]", m.Hash)))
 		for _, loc := range m.Locations {
-			fmt.Printf("  • %s:%d\n", loc.Filename, loc.LineStart)
+			fmt.Printf("  %s%s%s\n",
+				locationStyle.Render(loc.Filename),
+				dimStyle.Render(":"),
+				lineNumStyle.Render(fmt.Sprintf("%d", loc.LineStart)))
 		}
 	}
 
-	fmt.Printf("Total: %d duplicate patterns\n", len(matches))
+	fmt.Printf("\nTotal: %s duplicate patterns\n", summaryStyle.Render(fmt.Sprintf("%d", len(matches))))
 
 	// Build JSON output (includes ALL patterns, not just top N)
 	jsonOutput := JSONOutput{
@@ -355,7 +374,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Results written to: %s\n", outputPath)
+	fmt.Printf("Results written to: %s\n", locationStyle.Render(outputPath))
 
 	// Write raw patterns file with actual code
 	rawPath := filepath.Join(outputDir, "patterns.md")
@@ -363,7 +382,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error writing patterns file: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Raw patterns written to: %s\n", rawPath)
+	fmt.Printf("Raw patterns written to: %s\n", locationStyle.Render(rawPath))
 }
 
 func writeRawPatterns(path string, matches []PatternMatch) error {

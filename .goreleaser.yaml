@@ -30,6 +30,6 @@ changelog:
 release:
   github:
     owner: asynkron
-    name: QuickDup
+    name: Asynkron.QuickDup
   draft: false
   prerelease: false

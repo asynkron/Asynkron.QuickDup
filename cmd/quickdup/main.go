@@ -32,11 +32,45 @@ type PatternMatch struct {
 // Separators for word extraction
 const separators = " \t:.;{}()[]#!<>=,\n\r"
 
+// Blocklist of common useless patterns (computed at init)
+var blockedHashes map[uint64]bool
+
+func init() {
+	blockedHashes = make(map[uint64]bool)
+
+	// Common patterns to ignore (closing braces, function boundaries)
+	uselessPatterns := [][]IndentAndWord{
+		// } }
+		{{IndentDelta: -4, Word: "}"}, {IndentDelta: -4, Word: "}"}},
+		// } } }
+		{{IndentDelta: -4, Word: "}"}, {IndentDelta: -4, Word: "}"}, {IndentDelta: -4, Word: "}"}},
+		// return }
+		{{IndentDelta: 0, Word: "return"}, {IndentDelta: -4, Word: "}"}},
+		// +4 return }
+		{{IndentDelta: 4, Word: "return"}, {IndentDelta: -4, Word: "}"}},
+		// } return }
+		{{IndentDelta: -4, Word: "}"}, {IndentDelta: 0, Word: "return"}, {IndentDelta: -4, Word: "}"}},
+		// } func
+		{{IndentDelta: -4, Word: "}"}, {IndentDelta: 0, Word: "func"}},
+		// } return
+		{{IndentDelta: -4, Word: "}"}, {IndentDelta: 0, Word: "return"}},
+	}
+
+	for _, pattern := range uselessPatterns {
+		blockedHashes[hashPattern(pattern)] = true
+	}
+}
+
+var commentPrefix string
+
 func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
+	comment := flag.String("comment", "//", "Single-line comment prefix to ignore")
 	flag.Parse()
+
+	commentPrefix = *comment
 
 	folder := *path
 	extension := *ext
@@ -86,7 +120,12 @@ func main() {
 
 	// Filter and collect matches
 	var matches []PatternMatch
+	skippedBlocked := 0
 	for hash, locs := range patterns {
+		if blockedHashes[hash] {
+			skippedBlocked++
+			continue
+		}
 		if len(locs) >= *minOccur {
 			matches = append(matches, PatternMatch{
 				Hash:      hash,
@@ -94,6 +133,9 @@ func main() {
 				Pattern:   locs[0].Pattern,
 			})
 		}
+	}
+	if skippedBlocked > 0 {
+		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}
 
 	// Sort by number of occurrences (descending)
@@ -148,6 +190,11 @@ func parseFile(path string) ([]IndentAndWord, error) {
 			continue
 		}
 
+		// Skip comment-only lines
+		if isCommentOnly(line) {
+			continue
+		}
+
 		indent := calculateIndent(line)
 		word := extractFirstWord(line)
 
@@ -175,6 +222,14 @@ func isWhitespaceOnly(line string) bool {
 		}
 	}
 	return true
+}
+
+func isCommentOnly(line string) bool {
+	if commentPrefix == "" {
+		return false
+	}
+	trimmed := strings.TrimLeft(line, " \t")
+	return strings.HasPrefix(trimmed, commentPrefix)
 }
 
 func calculateIndent(line string) int {

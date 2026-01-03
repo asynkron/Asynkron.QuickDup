@@ -261,6 +261,7 @@ func main() {
 	// Phase 1: Parse all files in parallel (with caching)
 	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
 
+	parseStart := time.Now()
 	var cache *FileCache
 	if !*noCache {
 		cache = loadCache(folder)
@@ -273,6 +274,7 @@ func main() {
 	if !*noCache && cacheMisses > 0 {
 		saveCache(folder, files, fileData)
 	}
+	parseTime := time.Since(parseStart)
 
 	// Count total lines of code (non-blank, non-comment)
 	totalLines := 0
@@ -281,14 +283,17 @@ func main() {
 	}
 
 	if cacheHits > 0 {
-		fmt.Printf("Parsed %d files (%d cached, %d parsed) (%d lines of code)\n", len(fileData), cacheHits, cacheMisses, totalLines)
+		fmt.Printf("Parsed %d files (%d cached, %d parsed) in %s (%d lines of code)\n", len(fileData), cacheHits, cacheMisses, parseTime.Round(time.Millisecond), totalLines)
 	} else {
-		fmt.Printf("Parsed %d files (%d lines of code)\n", len(fileData), totalLines)
+		fmt.Printf("Parsed %d files in %s (%d lines of code)\n", len(fileData), parseTime.Round(time.Millisecond), totalLines)
 	}
 
 	// Phase 2: Pattern detection with growth
+	detectStart := time.Now()
 	fmt.Printf("Detecting patterns...\n")
 	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize)
+	detectTime := time.Since(detectStart)
+	fmt.Printf("Pattern detection took %s\n", detectTime.Round(time.Millisecond))
 
 	// Filter and collect matches
 	var matches []PatternMatch

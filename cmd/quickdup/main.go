@@ -411,6 +411,41 @@ func main() {
 		}
 	}
 
+	// Hotspot analysis: count occurrences per file
+	fileOccurrences := make(map[string]int)
+	for _, m := range matches {
+		for _, loc := range m.Locations {
+			fileOccurrences[loc.Filename]++
+		}
+	}
+
+	// Sort files by occurrence count
+	type fileHotspot struct {
+		filename string
+		count    int
+	}
+	var hotspots []fileHotspot
+	for f, c := range fileOccurrences {
+		hotspots = append(hotspots, fileHotspot{f, c})
+	}
+	sort.Slice(hotspots, func(i, j int) bool {
+		return hotspots[i].count > hotspots[j].count
+	})
+
+	// Show top 5 hotspots
+	if len(hotspots) > 0 {
+		fmt.Printf("\n%s\n", summaryStyle.Render("Duplication hotspots:"))
+		showHotspots := 5
+		if len(hotspots) < showHotspots {
+			showHotspots = len(hotspots)
+		}
+		for i := 0; i < showHotspots; i++ {
+			fmt.Printf("  %s %s\n",
+				lineNumStyle.Render(fmt.Sprintf("%3d", hotspots[i].count)),
+				locationStyle.Render(hotspots[i].filename))
+		}
+	}
+
 	elapsed := time.Since(startTime)
 	fmt.Printf("\nTotal: %s duplicate patterns in %s files (%s lines) in %s\n",
 		summaryStyle.Render(fmt.Sprintf("%d", len(matches))),

@@ -27,7 +27,8 @@ type PatternMatch struct {
 	Hash        uint64
 	Locations   []PatternLocation
 	Pattern     []IndentAndWord // representative pattern (first occurrence)
-	UniqueWords int             // score: number of unique words in pattern
+	UniqueWords int             // number of unique words in pattern
+	Score       int             // combined score: uniqueWords + length
 }
 
 // Separators for word extraction
@@ -215,11 +216,13 @@ func main() {
 		}
 		if len(locs) >= *minOccur {
 			pattern := locs[0].Pattern
+			uniqueWords := countUniqueWords(pattern)
 			matches = append(matches, PatternMatch{
 				Hash:        hash,
 				Locations:   locs,
 				Pattern:     pattern,
-				UniqueWords: countUniqueWords(pattern),
+				UniqueWords: uniqueWords,
+				Score:       uniqueWords + len(pattern),
 			})
 		}
 	}
@@ -227,15 +230,9 @@ func main() {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}
 
-	// Sort by: unique words (desc), then pattern length (desc), then occurrences (desc)
+	// Sort by combined score (uniqueWords + length), descending
 	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].UniqueWords != matches[j].UniqueWords {
-			return matches[i].UniqueWords > matches[j].UniqueWords
-		}
-		if len(matches[i].Pattern) != len(matches[j].Pattern) {
-			return len(matches[i].Pattern) > len(matches[j].Pattern)
-		}
-		return len(matches[i].Locations) > len(matches[j].Locations)
+		return matches[i].Score > matches[j].Score
 	})
 
 	// Limit to top N
@@ -244,11 +241,11 @@ func main() {
 		top = len(matches)
 	}
 
-	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by length)\n\n", len(matches), *minOccur, top)
+	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by score)\n\n", len(matches), *minOccur, top)
 
 	for _, m := range matches[:top] {
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		fmt.Printf("Pattern [%d lines, %d unique words] found %d times:\n", len(m.Pattern), m.UniqueWords, len(m.Locations))
+		fmt.Printf("Score %d [%d lines, %d unique] found %d times:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations))
 		fmt.Printf("┌─────────────────────────────────────\n")
 		for _, entry := range m.Pattern {
 			indent := ""

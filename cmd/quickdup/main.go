@@ -268,7 +268,6 @@ func main() {
 	}
 
 	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
-	clearProgress()
 
 	// Save updated cache
 	if !*noCache && cacheMisses > 0 {
@@ -649,7 +648,6 @@ func parseFilesWithCache(files []string, cache *FileCache) (map[string][]IndentA
 	numWorkers := runtime.NumCPU()
 	results := make(map[string][]IndentAndWord)
 	var mu sync.Mutex
-	var completed atomic.Int64
 	var cacheHits atomic.Int64
 	var cacheMisses atomic.Int64
 
@@ -686,8 +684,6 @@ func parseFilesWithCache(files []string, cache *FileCache) (map[string][]IndentA
 					var err error
 					entries, err = parseFile(path)
 					if err != nil {
-						n := completed.Add(1)
-						printProgress("Parsing", int(n), len(files))
 						continue // skip files that fail to parse
 					}
 					cacheMisses.Add(1)
@@ -698,9 +694,6 @@ func parseFilesWithCache(files []string, cache *FileCache) (map[string][]IndentA
 				mu.Lock()
 				results[path] = entries
 				mu.Unlock()
-
-				n := completed.Add(1)
-				printProgress("Parsing", int(n), len(files))
 			}
 		}()
 	}
@@ -983,7 +976,6 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 func generateBasePatternsParallel(fileData map[string][]IndentAndWord, files []string, minSize int, numWorkers int) map[uint64][]PatternLocation {
 	result := make(map[uint64][]PatternLocation)
 	var mu sync.Mutex
-	var completed atomic.Int64
 
 	work := make(chan string, len(files))
 	for _, f := range files {
@@ -1015,9 +1007,6 @@ func generateBasePatternsParallel(fileData map[string][]IndentAndWord, files []s
 						Pattern:    patternCopy,
 					})
 				}
-
-				n64 := completed.Add(1)
-				printProgress("Analyzing", int(n64), len(files))
 			}
 
 			// Merge local results
@@ -1030,7 +1019,6 @@ func generateBasePatternsParallel(fileData map[string][]IndentAndWord, files []s
 	}
 
 	wg.Wait()
-	clearProgress()
 	return result
 }
 
@@ -1113,19 +1101,6 @@ func hashPattern(window []IndentAndWord) uint64 {
 	return h.Sum64()
 }
 
-const progressBarWidth = 40
-
-func printProgress(label string, current, total int) {
-	percent := float64(current) / float64(total)
-	filled := int(percent * progressBarWidth)
-
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", progressBarWidth-filled)
-	fmt.Printf("\r%s [%s] %3d%% (%d/%d)", label, bar, int(percent*100), current, total)
-}
-
-func clearProgress() {
-	fmt.Print("\r" + strings.Repeat(" ", 80) + "\r")
-}
 
 // tokenizeLine extracts all tokens from a source line
 func tokenizeLine(line string) []string {

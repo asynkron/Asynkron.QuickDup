@@ -4,11 +4,13 @@
 
 ## The shape of code
 
-QuickDup is a fast structural code clone detector that identifies duplicate code patterns using indent-delta fingerprinting. Designed as a candidate generator for AI-assisted code review.
+QuickDup is a fast structural code clone detector that:
+* Identifies duplicate code patterns using indent-delta fingerprinting.
+* Is designed as a candidate generator for AI-assisted code review.
 
 ## Performance
 
-- **~100k lines of code in ~1.5 seconds** on 8 cores
+- **~100k lines of code in ~500 ms** on 8 cores
 - Parallel file parsing and pattern detection
 - Lightweight fingerprinting (no AST parsing)
 
@@ -159,7 +161,7 @@ Score 15 [79 lines, 15 unique] found 3 times [a1b2c3d4e5f67890]:
 
 ...
 
-Total: 2410 duplicate patterns in 558 files (98234 lines) in ~700ms
+Total: 2410 duplicate patterns in 558 files (98234 lines) in ~500ms
 ```
 
 ## Limitations

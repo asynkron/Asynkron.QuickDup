@@ -295,11 +295,20 @@ func main() {
 	detectTime := time.Since(detectStart)
 	fmt.Printf("Pattern detection took %s\n", detectTime.Round(time.Millisecond))
 
-	// Filter and collect matches
-	var matches []PatternMatch
+	// Filter and collect matches (parallel token similarity)
+	filterStart := time.Now()
+
+	// First pass: filter blocked and low-score (cheap checks)
+	type candidate struct {
+		hash        uint64
+		locs        []PatternLocation
+		pattern     []IndentAndWord
+		uniqueWords int
+		score       int
+	}
+	var candidates []candidate
 	skippedBlocked := 0
 	skippedLowScore := 0
-	skippedLowSimilarity := 0
 	for hash, locs := range patterns {
 		if blockedHashes[hash] {
 			skippedBlocked++
@@ -313,21 +322,57 @@ func main() {
 				skippedLowScore++
 				continue
 			}
-			// Check token similarity across occurrences
-			similarity := computeAverageTokenSimilarity(locs)
-			if similarity < *minSimilarity {
-				skippedLowSimilarity++
-				continue
-			}
-			matches = append(matches, PatternMatch{
-				Hash:        hash,
-				Locations:   locs,
-				Pattern:     pattern,
-				UniqueWords: uniqueWords,
-				Score:       score,
-			})
+			candidates = append(candidates, candidate{hash, locs, pattern, uniqueWords, score})
 		}
 	}
+
+	// Second pass: parallel token similarity check
+	type similarityResult struct {
+		index      int
+		similarity float64
+	}
+	results := make([]similarityResult, len(candidates))
+	numWorkers := runtime.NumCPU()
+
+	var wg sync.WaitGroup
+	work := make(chan int, len(candidates))
+	for i := range candidates {
+		work <- i
+	}
+	close(work)
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range work {
+				sim := computeAverageTokenSimilarity(candidates[idx].locs)
+				results[idx] = similarityResult{idx, sim}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Collect matches that pass similarity threshold
+	var matches []PatternMatch
+	skippedLowSimilarity := 0
+	for _, r := range results {
+		if r.similarity < *minSimilarity {
+			skippedLowSimilarity++
+			continue
+		}
+		c := candidates[r.index]
+		matches = append(matches, PatternMatch{
+			Hash:        c.hash,
+			Locations:   c.locs,
+			Pattern:     c.pattern,
+			UniqueWords: c.uniqueWords,
+			Score:       c.score,
+		})
+	}
+	filterTime := time.Since(filterStart)
+	fmt.Printf("Filtering took %s\n", filterTime.Round(time.Millisecond))
+
 	if skippedBlocked > 0 {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}

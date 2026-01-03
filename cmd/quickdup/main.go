@@ -375,6 +375,18 @@ func extractFirstWord(line string) string {
 	return trimmed[:end]
 }
 
+// Symbols that don't count as "real" starting words
+func isSymbolOnly(word string) bool {
+	if len(word) == 0 {
+		return true
+	}
+	// Single character symbols
+	if len(word) == 1 {
+		return strings.ContainsAny(word, "{}[]()<>,.;:!?@#$%^&*+-=/\\|`~\"'")
+	}
+	return false
+}
+
 func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int) map[uint64][]PatternLocation {
 	patterns := make(map[uint64][]PatternLocation)
 
@@ -383,6 +395,11 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int) map[uin
 		n := len(entries)
 
 		for i := 0; i < n; i++ {
+			// Skip if first word is just a symbol
+			if isSymbolOnly(entries[i].Word) {
+				continue
+			}
+
 			// Window sizes from 2 to 10
 			maxJ := i + 10
 			if maxJ > n {

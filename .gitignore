@@ -3,6 +3,9 @@
 /codeclone
 *.exe
 
+# Output
+.quickdup/
+
 # IDE
 .idea/
 .vscode/

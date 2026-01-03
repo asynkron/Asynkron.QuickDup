@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -29,6 +30,26 @@ type PatternMatch struct {
 	Pattern     []IndentAndWord // representative pattern (first occurrence)
 	UniqueWords int             // number of unique words in pattern
 	Score       int             // combined score: uniqueWords + length
+}
+
+// JSON output structures
+type JSONLocation struct {
+	Filename  string `json:"filename"`
+	LineStart int    `json:"line_start"`
+}
+
+type JSONPattern struct {
+	Score       int            `json:"score"`
+	Lines       int            `json:"lines"`
+	UniqueWords int            `json:"unique_words"`
+	Occurrences int            `json:"occurrences"`
+	Pattern     []string       `json:"pattern"`
+	Locations   []JSONLocation `json:"locations"`
+}
+
+type JSONOutput struct {
+	TotalPatterns int           `json:"total_patterns"`
+	TopPatterns   []JSONPattern `json:"top_patterns"`
 }
 
 // Separators for word extraction
@@ -270,6 +291,63 @@ func main() {
 	}
 
 	fmt.Printf("Total: %d duplicate patterns\n", len(matches))
+
+	// Build JSON output
+	jsonOutput := JSONOutput{
+		TotalPatterns: len(matches),
+		TopPatterns:   make([]JSONPattern, 0, top),
+	}
+
+	for _, m := range matches[:top] {
+		// Convert pattern to string representation
+		patternStrs := make([]string, len(m.Pattern))
+		for i, entry := range m.Pattern {
+			if entry.IndentDelta > 0 {
+				patternStrs[i] = fmt.Sprintf("+%d %s", entry.IndentDelta, entry.Word)
+			} else {
+				patternStrs[i] = fmt.Sprintf("%d %s", entry.IndentDelta, entry.Word)
+			}
+		}
+
+		// Convert locations
+		locs := make([]JSONLocation, len(m.Locations))
+		for i, loc := range m.Locations {
+			locs[i] = JSONLocation{
+				Filename:  loc.Filename,
+				LineStart: loc.LineStart,
+			}
+		}
+
+		jsonOutput.TopPatterns = append(jsonOutput.TopPatterns, JSONPattern{
+			Score:       m.Score,
+			Lines:       len(m.Pattern),
+			UniqueWords: m.UniqueWords,
+			Occurrences: len(m.Locations),
+			Pattern:     patternStrs,
+			Locations:   locs,
+		})
+	}
+
+	// Create .quickdup directory and write JSON
+	outputDir := filepath.Join(*path, ".quickdup")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	outputPath := filepath.Join(outputDir, "results.json")
+	jsonData, err := json.MarshalIndent(jsonOutput, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing JSON file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Results written to: %s\n", outputPath)
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {

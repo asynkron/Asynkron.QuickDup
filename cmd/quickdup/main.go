@@ -405,9 +405,10 @@ func writeRawPatterns(path string, matches []PatternMatch) error {
 			sb.WriteString(fmt.Sprintf("### %s:%d\n\n", loc.Filename, loc.LineStart))
 			sb.WriteString("```\n")
 
-			// Use stored source lines from the pattern
-			for _, entry := range loc.Pattern {
-				sb.WriteString(entry.SourceLine + "\n")
+			// Use stored source lines from the pattern, normalized
+			normalizedLines := normalizeIndent(loc.Pattern)
+			for _, line := range normalizedLines {
+				sb.WriteString(line + "\n")
 			}
 			sb.WriteString("```\n\n")
 		}
@@ -522,6 +523,52 @@ func calculateIndent(line string) int {
 		}
 	}
 	return indent
+}
+
+// normalizeIndent strips the minimum common leading whitespace from all lines
+func normalizeIndent(pattern []IndentAndWord) []string {
+	if len(pattern) == 0 {
+		return nil
+	}
+
+	// Find minimum leading whitespace (count actual chars, not visual indent)
+	minLeading := -1
+	for _, entry := range pattern {
+		leading := 0
+		for _, r := range entry.SourceLine {
+			if r == ' ' || r == '\t' {
+				leading++
+			} else {
+				break
+			}
+		}
+		// Only count non-empty lines
+		if len(strings.TrimSpace(entry.SourceLine)) > 0 {
+			if minLeading == -1 || leading < minLeading {
+				minLeading = leading
+			}
+		}
+	}
+
+	if minLeading <= 0 {
+		// No normalization needed
+		result := make([]string, len(pattern))
+		for i, entry := range pattern {
+			result[i] = entry.SourceLine
+		}
+		return result
+	}
+
+	// Strip minLeading characters from each line
+	result := make([]string, len(pattern))
+	for i, entry := range pattern {
+		if len(entry.SourceLine) >= minLeading {
+			result[i] = entry.SourceLine[minLeading:]
+		} else {
+			result[i] = entry.SourceLine
+		}
+	}
+	return result
 }
 
 func extractFirstWord(line string) string {

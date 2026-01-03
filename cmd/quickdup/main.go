@@ -243,7 +243,13 @@ func main() {
 	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
 	fileData := parseFilesParallel(files)
 	clearProgress()
-	fmt.Printf("Parsed %d files\n", len(fileData))
+
+	// Count total lines of code (non-blank, non-comment)
+	totalLines := 0
+	for _, entries := range fileData {
+		totalLines += len(entries)
+	}
+	fmt.Printf("Parsed %d files (%d lines of code)\n", len(fileData), totalLines)
 
 	// Phase 2: Pattern detection with growth
 	fmt.Printf("Detecting patterns...\n")
@@ -320,7 +326,10 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nTotal: %s duplicate patterns\n", summaryStyle.Render(fmt.Sprintf("%d", len(matches))))
+	fmt.Printf("\nTotal: %s duplicate patterns in %s files (%s lines)\n",
+		summaryStyle.Render(fmt.Sprintf("%d", len(matches))),
+		summaryStyle.Render(fmt.Sprintf("%d", len(fileData))),
+		summaryStyle.Render(fmt.Sprintf("%d", totalLines)))
 
 	// Build JSON output (includes ALL patterns, not just top N)
 	jsonOutput := JSONOutput{

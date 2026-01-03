@@ -16,6 +16,7 @@ type IndentAndWord struct {
 	LineNumber  int
 	IndentDelta int
 	Word        string
+	SourceLine  string // actual source line for reconstruction
 }
 
 type PatternLocation struct {
@@ -383,29 +384,6 @@ func main() {
 	fmt.Printf("Raw patterns written to: %s\n", rawPath)
 }
 
-// Extract lines from a file given start line and count
-func extractLines(filename string, startLine, count int) ([]string, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		if lineNum >= startLine && lineNum < startLine+count {
-			lines = append(lines, scanner.Text())
-		}
-		if lineNum >= startLine+count {
-			break
-		}
-	}
-	return lines, scanner.Err()
-}
-
 func writeRawPatterns(path string, matches []PatternMatch) error {
 	var sb strings.Builder
 
@@ -427,13 +405,9 @@ func writeRawPatterns(path string, matches []PatternMatch) error {
 			sb.WriteString(fmt.Sprintf("### %s:%d\n\n", loc.Filename, loc.LineStart))
 			sb.WriteString("```\n")
 
-			lines, err := extractLines(loc.Filename, loc.LineStart, len(m.Pattern)+2) // +2 for context
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("// Error reading file: %v\n", err))
-			} else {
-				for _, line := range lines {
-					sb.WriteString(line + "\n")
-				}
+			// Use stored source lines from the pattern
+			for _, entry := range loc.Pattern {
+				sb.WriteString(entry.SourceLine + "\n")
 			}
 			sb.WriteString("```\n\n")
 		}
@@ -507,6 +481,7 @@ func parseFile(path string) ([]IndentAndWord, error) {
 			LineNumber:  lineNumber,
 			IndentDelta: indentDelta,
 			Word:        word,
+			SourceLine:  line,
 		})
 	}
 

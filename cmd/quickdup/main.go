@@ -49,7 +49,7 @@ type JSONPattern struct {
 
 type JSONOutput struct {
 	TotalPatterns int           `json:"total_patterns"`
-	TopPatterns   []JSONPattern `json:"top_patterns"`
+	Patterns      []JSONPattern `json:"patterns"`
 }
 
 // Separators for word extraction
@@ -302,13 +302,13 @@ func main() {
 
 	fmt.Printf("Total: %d duplicate patterns\n", len(matches))
 
-	// Build JSON output
+	// Build JSON output (includes ALL patterns, not just top N)
 	jsonOutput := JSONOutput{
 		TotalPatterns: len(matches),
-		TopPatterns:   make([]JSONPattern, 0, top),
+		Patterns:      make([]JSONPattern, 0, len(matches)),
 	}
 
-	for _, m := range matches[:top] {
+	for _, m := range matches {
 		// Convert pattern to string representation
 		patternStrs := make([]string, len(m.Pattern))
 		for i, entry := range m.Pattern {
@@ -328,7 +328,7 @@ func main() {
 			}
 		}
 
-		jsonOutput.TopPatterns = append(jsonOutput.TopPatterns, JSONPattern{
+		jsonOutput.Patterns = append(jsonOutput.Patterns, JSONPattern{
 			Score:       m.Score,
 			Lines:       len(m.Pattern),
 			UniqueWords: m.UniqueWords,

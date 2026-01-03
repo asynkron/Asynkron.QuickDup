@@ -1,6 +1,6 @@
-# CodeClone
+# QuickDup - Delta-Indent Clone Detection
 
-A fast, lightweight code clone detector designed for the AI era.
+QuickDup is a structural code clone detector that identifies **Type-2 and Type-3 clones** using indent-delta fingerprinting. It's designed as a fast candidate generator for AI-assisted code review.
 
 ## Philosophy
 

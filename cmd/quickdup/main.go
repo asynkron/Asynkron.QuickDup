@@ -411,37 +411,38 @@ func main() {
 		}
 	}
 
-	// Hotspot analysis: count occurrences per file
-	fileOccurrences := make(map[string]int)
+	// Hotspot analysis: count duplicated lines per file
+	fileDupLines := make(map[string]int)
 	for _, m := range matches {
+		patternLen := len(m.Pattern)
 		for _, loc := range m.Locations {
-			fileOccurrences[loc.Filename]++
+			fileDupLines[loc.Filename] += patternLen
 		}
 	}
 
-	// Sort files by occurrence count
+	// Sort files by duplicated line count
 	type fileHotspot struct {
 		filename string
-		count    int
+		lines    int
 	}
 	var hotspots []fileHotspot
-	for f, c := range fileOccurrences {
-		hotspots = append(hotspots, fileHotspot{f, c})
+	for f, lines := range fileDupLines {
+		hotspots = append(hotspots, fileHotspot{f, lines})
 	}
 	sort.Slice(hotspots, func(i, j int) bool {
-		return hotspots[i].count > hotspots[j].count
+		return hotspots[i].lines > hotspots[j].lines
 	})
 
 	// Show top 5 hotspots
 	if len(hotspots) > 0 {
-		fmt.Printf("\n%s\n", summaryStyle.Render("Duplication hotspots:"))
+		fmt.Printf("\n%s\n", summaryStyle.Render("Duplication hotspots (lines):"))
 		showHotspots := 5
 		if len(hotspots) < showHotspots {
 			showHotspots = len(hotspots)
 		}
 		for i := 0; i < showHotspots; i++ {
 			fmt.Printf("  %s %s\n",
-				lineNumStyle.Render(fmt.Sprintf("%3d", hotspots[i].count)),
+				lineNumStyle.Render(fmt.Sprintf("%4d", hotspots[i].lines)),
 				locationStyle.Render(hotspots[i].filename))
 		}
 	}

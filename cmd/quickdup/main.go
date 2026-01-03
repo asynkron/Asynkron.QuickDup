@@ -41,20 +41,14 @@ func main() {
 	folder := *path
 	extension := *ext
 
-	// Phase 1: Parse all files
-	fileData := make(map[string][]IndentAndWord)
-
+	// First pass: count files
+	var files []string
 	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() && strings.HasSuffix(path, extension) {
-			entries, err := parseFile(path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", path, err)
-				return nil
-			}
-			fileData[path] = entries
+			files = append(files, path)
 		}
 		return nil
 	})
@@ -64,10 +58,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	totalFiles := len(files)
+	if totalFiles == 0 {
+		fmt.Printf("No %s files found in %s\n", extension, folder)
+		os.Exit(0)
+	}
+
+	// Phase 1: Parse all files with progress
+	fileData := make(map[string][]IndentAndWord)
+
+	fmt.Printf("Scanning %d files...\n", totalFiles)
+	for i, path := range files {
+		entries, err := parseFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nWarning: could not parse %s: %v\n", path, err)
+			continue
+		}
+		fileData[path] = entries
+		printProgress("Parsing", i+1, totalFiles)
+	}
+	clearProgress()
 	fmt.Printf("Parsed %d files\n", len(fileData))
 
 	// Phase 2: Pattern detection
-	patterns := detectPatterns(fileData)
+	fmt.Printf("Detecting patterns...\n")
+	patterns := detectPatterns(fileData, len(fileData))
 
 	// Filter and collect matches
 	var matches []PatternMatch
@@ -205,9 +220,10 @@ func extractFirstWord(line string) string {
 	return trimmed[:end]
 }
 
-func detectPatterns(fileData map[string][]IndentAndWord) map[uint64][]PatternLocation {
+func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int) map[uint64][]PatternLocation {
 	patterns := make(map[uint64][]PatternLocation)
 
+	processed := 0
 	for filename, entries := range fileData {
 		n := len(entries)
 
@@ -233,7 +249,10 @@ func detectPatterns(fileData map[string][]IndentAndWord) map[uint64][]PatternLoc
 				})
 			}
 		}
+		processed++
+		printProgress("Analyzing", processed, totalFiles)
 	}
+	clearProgress()
 
 	return patterns
 }
@@ -247,4 +266,18 @@ func hashPattern(window []IndentAndWord) uint64 {
 	}
 
 	return h.Sum64()
+}
+
+const progressBarWidth = 40
+
+func printProgress(label string, current, total int) {
+	percent := float64(current) / float64(total)
+	filled := int(percent * progressBarWidth)
+
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", progressBarWidth-filled)
+	fmt.Printf("\r%s [%s] %3d%% (%d/%d)", label, bar, int(percent*100), current, total)
+}
+
+func clearProgress() {
+	fmt.Print("\r" + strings.Repeat(" ", 80) + "\r")
 }

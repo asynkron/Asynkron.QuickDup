@@ -32,6 +32,84 @@ type PatternMatch struct {
 // Separators for word extraction
 const separators = " \t:.;{}()[]#!<>=,\n\r"
 
+// Default comment prefixes by file extension
+var commentPrefixes = map[string]string{
+	// C-style
+	".go":    "//",
+	".c":     "//",
+	".h":     "//",
+	".cpp":   "//",
+	".hpp":   "//",
+	".cc":    "//",
+	".cxx":   "//",
+	".java":  "//",
+	".js":    "//",
+	".jsx":   "//",
+	".ts":    "//",
+	".tsx":   "//",
+	".cs":    "//",
+	".swift": "//",
+	".kt":    "//",
+	".kts":   "//",
+	".scala": "//",
+	".rs":    "//",
+	".php":   "//",
+	".m":     "//",
+	".mm":    "//",
+	".dart":  "//",
+	".v":     "//",
+	".zig":   "//",
+	// Hash-style
+	".py":     "#",
+	".rb":     "#",
+	".sh":     "#",
+	".bash":   "#",
+	".zsh":    "#",
+	".pl":     "#",
+	".pm":     "#",
+	".r":      "#",
+	".R":      "#",
+	".yaml":   "#",
+	".yml":    "#",
+	".toml":   "#",
+	".tf":     "#",
+	".cmake":  "#",
+	".make":   "#",
+	".mk":     "#",
+	".ps1":    "#",
+	".nim":    "#",
+	".jl":     "#",
+	".ex":     "#",
+	".exs":    "#",
+	".cr":     "#",
+	// Double-dash style
+	".sql":  "--",
+	".lua":  "--",
+	".hs":   "--",
+	".elm":  "--",
+	".ada":  "--",
+	".vhdl": "--",
+	// Semicolon style
+	".lisp": ";",
+	".cl":   ";",
+	".scm":  ";",
+	".clj":  ";",
+	".cljs": ";",
+	".el":   ";",
+	".asm":  ";",
+	// Percent style
+	".tex":    "%",
+	".mat":    "%", // MATLAB
+	".erl":    "%",
+	".hrl":    "%",
+	".pro":    "%",
+	".prolog": "%",
+	// Apostrophe style
+	".vb":  "'",
+	".bas": "'",
+	".vbs": "'",
+}
+
 // Blocklist of common useless patterns (computed at init)
 var blockedHashes map[uint64]bool
 
@@ -67,10 +145,17 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
-	comment := flag.String("comment", "//", "Single-line comment prefix to ignore")
+	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	flag.Parse()
 
-	commentPrefix = *comment
+	// Auto-detect comment prefix from extension, allow override
+	if *comment != "" {
+		commentPrefix = *comment
+	} else if prefix, ok := commentPrefixes[*ext]; ok {
+		commentPrefix = prefix
+	} else {
+		commentPrefix = "//" // fallback default
+	}
 
 	folder := *path
 	extension := *ext

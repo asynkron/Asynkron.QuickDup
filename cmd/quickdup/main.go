@@ -290,7 +290,7 @@ func main() {
 	fmt.Printf("Found %d patterns with %d+ occurrences (showing top %d by score)\n\n", len(matches), *minOccur, top)
 
 	for _, m := range matches[:top] {
-		fmt.Printf("\nScore %d [%d lines, %d unique] found %d times:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations))
+		fmt.Printf("\nScore %d [%d lines, %d unique] found %d times [%016x]:\n", m.Score, len(m.Pattern), m.UniqueWords, len(m.Locations), m.Hash)
 		fmt.Printf("Locations:\n")
 		for _, loc := range m.Locations {
 			fmt.Printf("  • %s:%d\n", loc.Filename, loc.LineStart)

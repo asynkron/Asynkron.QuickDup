@@ -217,6 +217,7 @@ func main() {
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
+	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	flag.Parse()
 
 	startTime := time.Now()
@@ -418,8 +419,8 @@ func main() {
 			}
 			endLine := loc.LineStart + len(m.Pattern) - 1
 			msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
-			fmt.Printf("::warning file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
-				loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Score, msg)
+			fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
+				*githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Score, msg)
 		}
 		fmt.Printf("\n")
 	}

@@ -210,7 +210,7 @@ func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords + similarity bonus)")
+	minScore := flag.Int("min-score", 3, "Minimum score to report (uniqueWords × adjusted similarity)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	minSimilarity := flag.Float64("min-similarity", 0.5, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
@@ -363,8 +363,13 @@ func main() {
 			continue
 		}
 		c := candidates[r.index]
-		// Score = uniqueWords + similarity bonus (0-5 points for 0-100% similarity)
-		score := c.uniqueWords + int(r.similarity*5)
+		// Score = uniqueWords × adjusted similarity
+		// Adjusted similarity maps 50%→0, 100%→1 (50% is the noise floor)
+		adjustedSim := r.similarity*2 - 1.0
+		if adjustedSim < 0 {
+			adjustedSim = 0
+		}
+		score := int(float64(c.uniqueWords) * adjustedSim)
 		if score < *minScore {
 			skippedLowScore++
 			continue

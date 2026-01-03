@@ -220,7 +220,19 @@ func main() {
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
+	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	flag.Parse()
+
+	// Parse exclude patterns
+	var excludePatterns []string
+	if *exclude != "" {
+		for _, p := range strings.Split(*exclude, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				excludePatterns = append(excludePatterns, p)
+			}
+		}
+	}
 
 	// Build set of changed files if --git-diff is specified
 	changedFiles := make(map[string]bool)
@@ -262,7 +274,17 @@ func main() {
 			return err
 		}
 		if !info.IsDir() && strings.EqualFold(filepath.Ext(path), extension) {
-			files = append(files, path)
+			// Check exclude patterns
+			excluded := false
+			for _, pattern := range excludePatterns {
+				if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				files = append(files, path)
+			}
 		}
 		return nil
 	})

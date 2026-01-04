@@ -310,6 +310,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	// If --select was provided with --scan, show detailed output from the just-written JSON
+	if *selectRange != "" {
+		patterns, err := ReadJSONResults(outputPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading results: %v\n", err)
+			os.Exit(1)
+		}
+		skip, limit, err := parseSelectRange(*selectRange)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		selected := selectJSONPatterns(patterns, skip, limit)
+		PrintDetailedMatchesFromJSON(selected, *ext)
+		fmt.Printf("\nShowing %d of %d patterns\n", len(selected), len(patterns))
+	}
 }
 
 // parseSelectRange parses a "skip..limit" string into skip and limit integers

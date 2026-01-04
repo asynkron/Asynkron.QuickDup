@@ -78,7 +78,7 @@ func (s *WordIndentStrategy) Preparse(content string) string {
 }
 
 func (s *WordIndentStrategy) ParseLine(lineNum int, line string, prevEntry Entry) (Entry, bool) {
-	if isWhitespaceOnly(line) || isCommentOnly(line) {
+	if isWhitespaceOnly(line) || isCommentOnly(line) || shouldSkipByFirstWord(line) {
 		return nil, true // skip
 	}
 

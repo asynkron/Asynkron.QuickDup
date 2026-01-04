@@ -41,7 +41,7 @@ func (s *NormalizedIndentStrategy) Preparse(content string) string {
 }
 
 func (s *NormalizedIndentStrategy) ParseLine(lineNum int, line string, prevEntry Entry) (Entry, bool) {
-	if isWhitespaceOnly(line) || isCommentOnly(line) {
+	if isWhitespaceOnly(line) || isCommentOnly(line) || shouldSkipByFirstWord(line) {
 		return nil, true // skip
 	}
 

@@ -278,14 +278,11 @@ func main() {
 		}
 		selected := selectMatches(matches, skip, limit)
 		PrintDetailedMatches(selected, *ext)
-		elapsed := time.Since(startTime)
-		PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
-		return
+	} else {
+		PrintMatchSummary(len(matches), *minOccur, len(top))
+		PrintMatches(top, len(top))
+		PrintHotspots(matches)
 	}
-
-	PrintMatchSummary(len(matches), *minOccur, len(top))
-	PrintMatches(top, len(top))
-	PrintHotspots(matches)
 
 	elapsed := time.Since(startTime)
 	PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)

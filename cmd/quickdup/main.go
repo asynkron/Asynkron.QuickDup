@@ -110,26 +110,8 @@ func main() {
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
 	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent")
-	selectRange := flag.String("select", "", "Select patterns from results JSON (format: skip..limit, e.g., 0..5)")
-	scan := flag.Bool("scan", false, "Force re-scan even if results JSON exists")
+	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
 	flag.Parse()
-
-	// If --select is provided without --scan, try to read from existing JSON
-	jsonPath := filepath.Join(*path, ".quickdup", *strategyName+"-results.json")
-	if *selectRange != "" && !*scan {
-		if patterns, err := ReadJSONResults(jsonPath); err == nil {
-			skip, limit, err := parseSelectRange(*selectRange)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			selected := selectJSONPatterns(patterns, skip, limit)
-			PrintDetailedMatchesFromJSON(selected, *ext)
-			fmt.Printf("\nShowing %d of %d patterns from %s\n", len(selected), len(patterns), jsonPath)
-			return
-		}
-		// JSON doesn't exist, fall through to scan
-	}
 
 	// Select strategy
 	strategies := map[string]Strategy{
@@ -311,7 +293,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If --select was provided with --scan, show detailed output from the just-written JSON
+	// If --select was provided, show detailed output from the JSON
 	if *selectRange != "" {
 		patterns, err := ReadJSONResults(outputPath)
 		if err != nil {

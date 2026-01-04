@@ -45,7 +45,7 @@ func filterOverlappingOccurrences(locs []PatternLocation, patternLen int) []Patt
 	return result
 }
 
-func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int) map[uint64][]PatternLocation {
+func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int, keepOverlaps bool) map[uint64][]PatternLocation {
 	allPatterns := make(map[uint64][]PatternLocation)
 	numWorkers := runtime.NumCPU()
 
@@ -96,7 +96,9 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 					filteredLocs = append(filteredLocs, loc)
 				}
 			}
-			filteredLocs = filterOverlappingOccurrences(filteredLocs, prevLen)
+			if !keepOverlaps {
+				filteredLocs = filterOverlappingOccurrences(filteredLocs, prevLen)
+			}
 			if len(filteredLocs) >= minOccur {
 				allPatterns[hash] = filteredLocs
 			}

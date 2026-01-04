@@ -111,6 +111,7 @@ func main() {
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
 	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent")
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
+	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
 	flag.Parse()
 
 	// Select strategy
@@ -253,7 +254,7 @@ func main() {
 	// Phase 2: Pattern detection with growth
 	detectStart := time.Now()
 	PrintDetectStart()
-	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize)
+	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize, *keepOverlaps)
 	detectTime := time.Since(detectStart)
 	PrintDetectComplete(detectTime)
 

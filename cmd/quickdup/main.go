@@ -135,6 +135,7 @@ func main() {
 	strategies := map[string]Strategy{
 		"word-indent":       &WordIndentStrategy{},
 		"normalized-indent": &NormalizedIndentStrategy{},
+		"word-only":         &WordOnlyStrategy{},
 	}
 	if s, ok := strategies[*strategyName]; ok {
 		activeStrategy = s

@@ -1,0 +1,36 @@
+
+
+
+
+        ±0 for (var i = 0; i < array.Items.Count; i++)
+        ±0 {
+            +1 // array.Items[i] is already JsValue
+            ±0 var item = array.Items[i];
+            ±0 if (item.TryGetObject<JsObject>(out var itemObj) && itemObj.TryGetProperty("then", out var thenMethod) &&
+                +1 // thenMethod is already JsValue from TryGetProperty
+                ±0 thenMethod.TryGetCallable(out var thenCallable))
+            -1 {
+                +1 var thenArgs = new[] { (JsValue)CreateResolve(i), (JsValue)CreateReject(i) };
+                ±0 thenCallable.Invoke(thenArgs, item);
+            -1 }
+            ±0 else
+            ±0 {
+                +1 Resolve(i, item, false);
+            -1 }
+        -1 }
+#
+        ±0 return new JsValue(resultPromise.JsObject);
+#
+        ±0 HostFunction CreateResolve(int index)
+        ±0 {
+            +1 return new HostFunction(ResolveWrapper, Realm, false);
+#
+            ±0 JsValue ResolveWrapper(JsValue __, IReadOnlyList<JsValue> resolveArgs)
+            ±0 {
+                +1 Resolve(index, resolveArgs.GetArgument(0), false);
+                +1 return JsValue.Undefined;
+            -1 }
+        -1 }
+
+
+

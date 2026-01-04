@@ -110,8 +110,26 @@ func main() {
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
 	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent")
-	selectRange := flag.String("select", "0..5", "Select patterns to show in detail (format: skip..limit, e.g., 0..3)")
+	selectRange := flag.String("select", "", "Select patterns from results JSON (format: skip..limit, e.g., 0..5)")
+	scan := flag.Bool("scan", false, "Force re-scan even if results JSON exists")
 	flag.Parse()
+
+	// If --select is provided without --scan, try to read from existing JSON
+	jsonPath := filepath.Join(*path, ".quickdup", *strategyName+"-results.json")
+	if *selectRange != "" && !*scan {
+		if patterns, err := ReadJSONResults(jsonPath); err == nil {
+			skip, limit, err := parseSelectRange(*selectRange)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			selected := selectJSONPatterns(patterns, skip, limit)
+			PrintDetailedMatchesFromJSON(selected, *ext)
+			fmt.Printf("\nShowing %d of %d patterns from %s\n", len(selected), len(patterns), jsonPath)
+			return
+		}
+		// JSON doesn't exist, fall through to scan
+	}
 
 	// Select strategy
 	strategies := map[string]Strategy{
@@ -275,20 +293,9 @@ func main() {
 		PrintGitHubAnnotations(top, len(top), *githubLevel, *gitDiff, changedFiles)
 	}
 
-	// Handle --select for detailed output
-	if *selectRange != "" {
-		skip, limit, err := parseSelectRange(*selectRange)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		selected := selectMatches(matches, skip, limit)
-		PrintDetailedMatches(selected, *ext)
-	} else {
-		PrintMatchSummary(len(matches), *minOccur, len(top))
-		PrintMatches(top, len(top))
-		PrintHotspots(matches)
-	}
+	PrintMatchSummary(len(matches), *minOccur, len(top))
+	PrintMatches(top, len(top))
+	PrintHotspots(matches)
 
 	elapsed := time.Since(startTime)
 	PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
@@ -332,4 +339,16 @@ func selectMatches(matches []PatternMatch, skip, limit int) []PatternMatch {
 		end = len(matches)
 	}
 	return matches[skip:end]
+}
+
+// selectJSONPatterns returns a slice of JSON patterns starting at skip with at most limit items
+func selectJSONPatterns(patterns []JSONPattern, skip, limit int) []JSONPattern {
+	if skip >= len(patterns) {
+		return nil
+	}
+	end := skip + limit
+	if end > len(patterns) {
+		end = len(patterns)
+	}
+	return patterns[skip:end]
 }

@@ -343,6 +343,133 @@ func renderWithGlow(markdown string) {
 	}
 }
 
+// ReadJSONResults reads results from a JSON file
+func ReadJSONResults(path string) ([]JSONPattern, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var output JSONOutput
+	if err := json.Unmarshal(data, &output); err != nil {
+		return nil, err
+	}
+
+	return output.Patterns, nil
+}
+
+// PrintDetailedMatchesFromJSON prints detailed pattern matches from JSON results
+func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
+	lang := langFromExt[ext]
+	if lang == "" {
+		lang = strings.TrimPrefix(ext, ".")
+	}
+
+	// Group patterns by hash to detect multiple clusters
+	hashCounts := make(map[string]int)
+	for _, p := range patterns {
+		hashCounts[p.Hash]++
+	}
+
+	// Track cluster number per hash
+	hashClusterNum := make(map[string]int)
+
+	var sb strings.Builder
+	for i, p := range patterns {
+		// Determine if this hash has multiple clusters
+		clusterInfo := ""
+		if hashCounts[p.Hash] > 1 {
+			hashClusterNum[p.Hash]++
+			clusterInfo = fmt.Sprintf(" (Cluster %d/%d)", hashClusterNum[p.Hash], hashCounts[p.Hash])
+		}
+
+		sb.WriteString(fmt.Sprintf("## Pattern %d%s\n\n", i+1, clusterInfo))
+		sb.WriteString(fmt.Sprintf("**Hash:** `%s`  **Score:** %d  **Similarity:** %.0f%%  **Lines:** %d  **Occurrences:** %d\n\n",
+			p.Hash, p.Score, p.Similarity*100, p.Lines, p.Occurrences))
+
+		for j, loc := range p.Locations {
+			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
+				j+1, loc.Filename, loc.LineStart))
+
+			// Read source lines from file
+			lines := readSourceLines(loc.Filename, loc.LineStart, p.Lines)
+			sb.WriteString(fmt.Sprintf("```%s\n", lang))
+			for _, line := range lines {
+				sb.WriteString(line + "\n")
+			}
+			sb.WriteString("```\n\n")
+		}
+		sb.WriteString("---\n\n")
+	}
+
+	renderWithGlow(sb.String())
+}
+
+// readSourceLines reads specific lines from a file and normalizes indent
+func readSourceLines(filename string, startLine, count int) []string {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return []string{fmt.Sprintf("// Error reading file: %v", err)}
+	}
+
+	allLines := strings.Split(string(data), "\n")
+	var result []string
+
+	// Find minimum indent for normalization
+	minIndent := -1
+	for i := startLine - 1; i < startLine-1+count && i < len(allLines); i++ {
+		if i < 0 {
+			continue
+		}
+		line := allLines[i]
+		indent := 0
+		for _, r := range line {
+			if r == ' ' {
+				indent++
+			} else if r == '\t' {
+				indent += 4
+			} else {
+				break
+			}
+		}
+		if len(strings.TrimSpace(line)) > 0 && (minIndent < 0 || indent < minIndent) {
+			minIndent = indent
+		}
+	}
+	if minIndent < 0 {
+		minIndent = 0
+	}
+
+	// Extract and normalize lines
+	for i := startLine - 1; i < startLine-1+count && i < len(allLines); i++ {
+		if i < 0 {
+			continue
+		}
+		line := allLines[i]
+		// Strip minimum indent
+		stripped := 0
+		start := 0
+		for j, r := range line {
+			if stripped >= minIndent {
+				start = j
+				break
+			}
+			if r == ' ' {
+				stripped++
+			} else if r == '\t' {
+				stripped += 4
+			} else {
+				start = j
+				break
+			}
+			start = j + 1
+		}
+		result = append(result, line[start:])
+	}
+
+	return result
+}
+
 // WriteJSONResults writes the results to a JSON file
 func WriteJSONResults(matches []PatternMatch, outputPath string) error {
 	jsonOutput := JSONOutput{

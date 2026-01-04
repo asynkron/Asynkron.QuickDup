@@ -106,9 +106,12 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 		}
 	}
 
-	// Sort by score descending
+	// Sort by score descending, then by hash for deterministic order
 	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Score > matches[j].Score
+		if matches[i].Score != matches[j].Score {
+			return matches[i].Score > matches[j].Score
+		}
+		return matches[i].Hash < matches[j].Hash
 	})
 
 	return matches, stats

@@ -232,7 +232,12 @@ func main() {
 			os.Exit(1)
 		}
 		baseRef, headRef := parts[0], parts[1]
-		runCompare(baseRef, headRef, *ext, *exclude, *minOccur, *minScore, *minSize, *minSimilarity)
+		// Extract subdir from path if it's not "."
+		subdir := ""
+		if *path != "." {
+			subdir = *path
+		}
+		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minScore, *minSize, *minSimilarity)
 		return
 	}
 
@@ -1299,8 +1304,12 @@ func computeAverageTokenSimilarity(locations []PatternLocation) float64 {
 }
 
 // runCompare compares duplicate patterns between two git commits
-func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSize int, minSimilarity float64) {
-	fmt.Printf("Comparing duplicates: %s -> %s\n\n", baseRef, headRef)
+func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScore, minSize int, minSimilarity float64) {
+	fmt.Printf("Comparing duplicates: %s -> %s\n", baseRef, headRef)
+	if subdir != "" {
+		fmt.Printf("Subdirectory: %s\n", subdir)
+	}
+	fmt.Println()
 
 	// Create temporary worktrees
 	baseDir, err := os.MkdirTemp("", "quickdup-base-")
@@ -1347,9 +1356,17 @@ func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSi
 		args = append(args, "-exclude", exclude)
 	}
 
+	// Determine scan paths (worktree root or subdir within)
+	baseScanPath := baseDir
+	headScanPath := headDir
+	if subdir != "" {
+		baseScanPath = filepath.Join(baseDir, subdir)
+		headScanPath = filepath.Join(headDir, subdir)
+	}
+
 	// Run quickdup on base
 	fmt.Printf("\nScanning %s...\n", baseRef)
-	baseArgs := append([]string{"-path", baseDir}, args...)
+	baseArgs := append([]string{"-path", baseScanPath}, args...)
 	cmd = exec.Command(os.Args[0], baseArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1359,7 +1376,7 @@ func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSi
 
 	// Run quickdup on head
 	fmt.Printf("\nScanning %s...\n", headRef)
-	headArgs := append([]string{"-path", headDir}, args...)
+	headArgs := append([]string{"-path", headScanPath}, args...)
 	cmd = exec.Command(os.Args[0], headArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1368,8 +1385,8 @@ func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSi
 	}
 
 	// Load results from both
-	baseResults := loadJSONResults(filepath.Join(baseDir, ".quickdup", "results.json"))
-	headResults := loadJSONResults(filepath.Join(headDir, ".quickdup", "results.json"))
+	baseResults := loadJSONResults(filepath.Join(baseScanPath, ".quickdup", "results.json"))
+	headResults := loadJSONResults(filepath.Join(headScanPath, ".quickdup", "results.json"))
 
 	// Build hash -> occurrences maps
 	baseOccur := make(map[string]int)
@@ -1431,7 +1448,7 @@ func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSi
 			fmt.Printf("  Remaining locations:\n")
 			for _, loc := range l.pattern.Locations {
 				// Make path relative by stripping worktree prefix
-				relPath := strings.TrimPrefix(loc.Filename, headDir+"/")
+				relPath := strings.TrimPrefix(loc.Filename, headScanPath+"/")
 				fmt.Printf("    %s\n", locationStyle.Render(fmt.Sprintf("%s:%d", relPath, loc.LineStart)))
 			}
 			fmt.Println()

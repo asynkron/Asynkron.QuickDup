@@ -677,52 +677,8 @@ func main() {
 	}
 
 	fmt.Printf("Results written to: %s\n", locationStyle.Render(outputPath))
-
-	// Write raw patterns file with actual code
-	rawPath := filepath.Join(outputDir, "patterns.md")
-	if err := writeRawPatterns(rawPath, matches); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing patterns file: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Raw patterns written to: %s\n", locationStyle.Render(rawPath))
 }
 
-func writeRawPatterns(path string, matches []PatternMatch) error {
-	var sb strings.Builder
-
-	sb.WriteString("# Duplicate Code Patterns\n\n")
-	sb.WriteString("This file contains actual code snippets for each detected pattern.\n")
-	sb.WriteString("Review these to determine if they represent refactorable duplications.\n\n")
-
-	for i, m := range matches {
-		sb.WriteString(fmt.Sprintf("---\n\n## Pattern %d [%016x] (Score: %d, Occurrences: %d)\n\n", i+1, m.Hash, m.Score, len(m.Locations)))
-
-		// Show up to 4 occurrences
-		maxShow := 4
-		if len(m.Locations) < maxShow {
-			maxShow = len(m.Locations)
-		}
-
-		for j := 0; j < maxShow; j++ {
-			loc := m.Locations[j]
-			sb.WriteString(fmt.Sprintf("### %s:%d\n\n", loc.Filename, loc.LineStart))
-			sb.WriteString("```\n")
-
-			// Use stored source lines from the pattern, normalized
-			normalizedLines := normalizeIndent(loc.Pattern)
-			for _, line := range normalizedLines {
-				sb.WriteString(line + "\n")
-			}
-			sb.WriteString("```\n\n")
-		}
-
-		if len(m.Locations) > maxShow {
-			sb.WriteString(fmt.Sprintf("*... and %d more occurrences*\n\n", len(m.Locations)-maxShow))
-		}
-	}
-
-	return os.WriteFile(path, []byte(sb.String()), 0644)
-}
 
 // loadIgnoredHashes reads ignore.json and adds hashes to the blocked list
 func loadIgnoredHashes(dir string) int {
@@ -948,52 +904,6 @@ func calculateIndent(line string) int {
 		}
 	}
 	return indent
-}
-
-// normalizeIndent strips the minimum common leading whitespace from all lines
-func normalizeIndent(pattern []IndentAndWord) []string {
-	if len(pattern) == 0 {
-		return nil
-	}
-
-	// Find minimum leading whitespace (count actual chars, not visual indent)
-	minLeading := -1
-	for _, entry := range pattern {
-		leading := 0
-		for _, r := range entry.SourceLine {
-			if r == ' ' || r == '\t' {
-				leading++
-			} else {
-				break
-			}
-		}
-		// Only count non-empty lines
-		if len(strings.TrimSpace(entry.SourceLine)) > 0 {
-			if minLeading == -1 || leading < minLeading {
-				minLeading = leading
-			}
-		}
-	}
-
-	if minLeading <= 0 {
-		// No normalization needed
-		result := make([]string, len(pattern))
-		for i, entry := range pattern {
-			result[i] = entry.SourceLine
-		}
-		return result
-	}
-
-	// Strip minLeading characters from each line
-	result := make([]string, len(pattern))
-	for i, entry := range pattern {
-		if len(entry.SourceLine) >= minLeading {
-			result[i] = entry.SourceLine[minLeading:]
-		} else {
-			result[i] = entry.SourceLine
-		}
-	}
-	return result
 }
 
 func extractFirstWord(line string) string {

@@ -647,7 +647,14 @@ func loadIgnoredHashes(dir string) int {
 	ignorePath := filepath.Join(dir, ".quickdup", "ignore.json")
 	data, err := os.ReadFile(ignorePath)
 	if err != nil {
-		return 0 // File doesn't exist or can't be read, that's fine
+		// Create empty ignore.json if it doesn't exist
+		if os.IsNotExist(err) {
+			emptyIgnore := IgnoreFile{Ignored: []string{}}
+			if jsonData, err := json.MarshalIndent(emptyIgnore, "", "  "); err == nil {
+				os.WriteFile(ignorePath, jsonData, 0644)
+			}
+		}
+		return 0
 	}
 
 	var ignoreFile IgnoreFile

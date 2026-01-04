@@ -11,7 +11,7 @@ import (
 )
 
 // runCompare compares duplicate patterns between two git commits
-func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScore, minSize int, minSimilarity float64) {
+func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScore, minSize int, minSimilarity float64, strategyName string) {
 	fmt.Printf("Comparing duplicates: %s -> %s\n", baseRef, headRef)
 	if subdir != "" {
 		fmt.Printf("Subdirectory: %s\n", subdir)
@@ -57,6 +57,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 		"-min-score", fmt.Sprintf("%d", minScore),
 		"-min-size", fmt.Sprintf("%d", minSize),
 		"-min-similarity", fmt.Sprintf("%f", minSimilarity),
+		"-strategy", strategyName,
 		"--no-cache",
 	}
 	if exclude != "" {
@@ -92,8 +93,8 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 	}
 
 	// Load results from both
-	baseResults := loadJSONResults(filepath.Join(baseScanPath, ".quickdup", "results.json"))
-	headResults := loadJSONResults(filepath.Join(headScanPath, ".quickdup", "results.json"))
+	baseResults := loadJSONResults(filepath.Join(baseScanPath, ".quickdup", strategyName+"-results.json"))
+	headResults := loadJSONResults(filepath.Join(headScanPath, ".quickdup", strategyName+"-results.json"))
 
 	// Build hash -> occurrences maps
 	baseOccur := make(map[string]int)
@@ -146,14 +147,14 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 		fmt.Printf("Found %d patterns with incomplete refactoring:\n\n", len(lingeringPatterns))
 		for _, l := range lingeringPatterns {
 			fmt.Printf("%s %s removed, %s lingering - potentially missed refactoring?\n",
-				hashStyle.Render(fmt.Sprintf("[%s]", l.hash)),
-				summaryStyle.Render(fmt.Sprintf("%d", l.removed)),
-				scoreStyle.Render(fmt.Sprintf("%d", l.headCount)))
+				theme.Hash.Render(fmt.Sprintf("[%s]", l.hash)),
+				theme.Summary.Render(fmt.Sprintf("%d", l.removed)),
+				theme.Score.Render(fmt.Sprintf("%d", l.headCount)))
 			fmt.Printf("  Remaining locations:\n")
 			for _, loc := range l.pattern.Locations {
 				// Make path relative by stripping worktree prefix
 				relPath := strings.TrimPrefix(loc.Filename, headScanPath+"/")
-				fmt.Printf("    %s\n", locationStyle.Render(fmt.Sprintf("%s:%d", relPath, loc.LineStart)))
+				fmt.Printf("    %s\n", theme.Location.Render(fmt.Sprintf("%s:%d", relPath, loc.LineStart)))
 			}
 			fmt.Println()
 		}
@@ -168,7 +169,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 		}
 	}
 	if fullyRemoved > 0 {
-		fmt.Printf("\n%s duplicate patterns were completely removed.\n", summaryStyle.Render(fmt.Sprintf("%d", fullyRemoved)))
+		fmt.Printf("\n%s duplicate patterns were completely removed.\n", theme.Summary.Render(fmt.Sprintf("%d", fullyRemoved)))
 	}
 
 	// Report new patterns
@@ -179,7 +180,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 		}
 	}
 	if newPatterns > 0 {
-		fmt.Printf("%s new duplicate patterns were introduced.\n", scoreStyle.Render(fmt.Sprintf("%d", newPatterns)))
+		fmt.Printf("%s new duplicate patterns were introduced.\n", theme.Score.Render(fmt.Sprintf("%d", newPatterns)))
 	}
 }
 

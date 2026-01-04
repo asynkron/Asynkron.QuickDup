@@ -14,7 +14,7 @@ func parseFile(path string) ([]Entry, error) {
 		return nil, err
 	}
 
-	content := defaultStrategy.Preparse(string(data))
+	content := activeStrategy.Preparse(string(data))
 	lines := strings.Split(content, "\n")
 
 	var entries []Entry
@@ -23,7 +23,7 @@ func parseFile(path string) ([]Entry, error) {
 	for lineNumber, line := range lines {
 		lineNumber++ // 1-based line numbers
 
-		entry, skip := defaultStrategy.ParseLine(lineNumber, line, prevEntry)
+		entry, skip := activeStrategy.ParseLine(lineNumber, line, prevEntry)
 		if skip {
 			continue
 		}

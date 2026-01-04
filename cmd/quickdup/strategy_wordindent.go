@@ -134,3 +134,31 @@ func (s *WordIndentStrategy) Score(entries []Entry, similarity float64) int {
 	}
 	return int(float64(uniqueWords) * adjustedSim)
 }
+
+func (s *WordIndentStrategy) BlockedHashes() map[uint64]bool {
+	blocked := make(map[uint64]bool)
+
+	// Common patterns to ignore (closing braces, function boundaries)
+	uselessPatterns := [][]Entry{
+		// } }
+		{NewWordIndentEntry(-4, "}"), NewWordIndentEntry(-4, "}")},
+		// } } }
+		{NewWordIndentEntry(-4, "}"), NewWordIndentEntry(-4, "}"), NewWordIndentEntry(-4, "}")},
+		// return }
+		{NewWordIndentEntry(0, "return"), NewWordIndentEntry(-4, "}")},
+		// +4 return }
+		{NewWordIndentEntry(4, "return"), NewWordIndentEntry(-4, "}")},
+		// } return }
+		{NewWordIndentEntry(-4, "}"), NewWordIndentEntry(0, "return"), NewWordIndentEntry(-4, "}")},
+		// } func
+		{NewWordIndentEntry(-4, "}"), NewWordIndentEntry(0, "func")},
+		// } return
+		{NewWordIndentEntry(-4, "}"), NewWordIndentEntry(0, "return")},
+	}
+
+	for _, pattern := range uselessPatterns {
+		blocked[s.Hash(pattern)] = true
+	}
+
+	return blocked
+}

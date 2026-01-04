@@ -8,6 +8,7 @@ type Strategy interface {
 	Hash(entries []Entry) uint64
 	Signature(entries []Entry) string
 	Score(entries []Entry, similarity float64) int
+	BlockedHashes() map[uint64]bool // returns hashes of patterns to ignore
 }
 
 // Preparser transforms file content before parsing

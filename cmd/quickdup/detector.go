@@ -133,7 +133,7 @@ func generateBasePatternsParallel(fileData map[string][]Entry, files []string, m
 
 				for i := 0; i <= n-minSize; i++ {
 					window := entries[i : i+minSize]
-					hash := defaultStrategy.Hash(window)
+					hash := activeStrategy.Hash(window)
 					patternCopy := make([]Entry, len(window))
 					copy(patternCopy, window)
 
@@ -203,7 +203,7 @@ func extendPatternsParallel(survivors map[uint64][]PatternLocation, fileData map
 				}
 
 				window := entries[loc.EntryIndex:endIdx]
-				hash := defaultStrategy.Hash(window)
+				hash := activeStrategy.Hash(window)
 				patternCopy := make([]Entry, len(window))
 				copy(patternCopy, window)
 

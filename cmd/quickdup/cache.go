@@ -23,8 +23,13 @@ type FileCache struct {
 
 const cacheVersion = 1
 
-func loadCache(dir string) *FileCache {
-	cachePath := filepath.Join(dir, ".quickdup", "cache.gob")
+func loadCache(dir string, strategyName string) *FileCache {
+	// Cache only works with word-indent strategy (uses WordIndentEntry)
+	if strategyName != "word-indent" {
+		return nil
+	}
+
+	cachePath := filepath.Join(dir, ".quickdup", strategyName+"-cache.gob")
 	file, err := os.Open(cachePath)
 	if err != nil {
 		return nil
@@ -46,7 +51,12 @@ func loadCache(dir string) *FileCache {
 }
 
 // saveCache saves the file cache to disk
-func saveCache(dir string, files []string, fileData map[string][]Entry) {
+func saveCache(dir string, strategyName string, files []string, fileData map[string][]Entry) {
+	// Cache only works with word-indent strategy (uses WordIndentEntry)
+	if strategyName != "word-indent" {
+		return
+	}
+
 	// Build cache from current file data
 	cache := FileCache{
 		Version: cacheVersion,
@@ -77,7 +87,7 @@ func saveCache(dir string, files []string, fileData map[string][]Entry) {
 	cacheDir := filepath.Join(dir, ".quickdup")
 	os.MkdirAll(cacheDir, 0755)
 
-	cachePath := filepath.Join(cacheDir, "cache.gob")
+	cachePath := filepath.Join(cacheDir, strategyName+"-cache.gob")
 	file, err := os.Create(cachePath)
 	if err != nil {
 		return // silently fail

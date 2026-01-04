@@ -106,3 +106,32 @@ func (s *NormalizedIndentStrategy) Score(entries []Entry, similarity float64) in
 	}
 	return int(float64(uniqueWords) * adjustedSim)
 }
+
+func (s *NormalizedIndentStrategy) BlockedHashes() map[uint64]bool {
+	blocked := make(map[uint64]bool)
+
+	// Common patterns to ignore (closing braces, function boundaries)
+	// Using normalized deltas: -1, 0, +1
+	uselessPatterns := [][]Entry{
+		// } }
+		{NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(-1, "}")},
+		// } } }
+		{NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(-1, "}")},
+		// return }
+		{NewNormalizedIndentEntry(0, "return"), NewNormalizedIndentEntry(-1, "}")},
+		// +1 return }
+		{NewNormalizedIndentEntry(1, "return"), NewNormalizedIndentEntry(-1, "}")},
+		// } return }
+		{NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(0, "return"), NewNormalizedIndentEntry(-1, "}")},
+		// } func
+		{NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(0, "func")},
+		// } return
+		{NewNormalizedIndentEntry(-1, "}"), NewNormalizedIndentEntry(0, "return")},
+	}
+
+	for _, pattern := range uselessPatterns {
+		blocked[s.Hash(pattern)] = true
+	}
+
+	return blocked
+}

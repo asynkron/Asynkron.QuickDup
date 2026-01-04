@@ -195,7 +195,7 @@ This is a **heuristic candidate generator**:
 - **False positives** — Structural similarity doesn't guarantee semantic duplication
 - **False negatives** — Different structure with same semantics won't match
 
-Token similarity filtering and clustering catch most structural false positives. Patterns like `if x > 0` and `if y < 0` will have low similarity scores and either be filtered out or placed in separate clusters.
+Token similarity filtering and clustering catch cases where occurrences differ significantly. Small differences (a few tokens in a large pattern) won't affect similarity much — which is intentional, as those are likely real duplicates with minor variations.
 
 ## License
 

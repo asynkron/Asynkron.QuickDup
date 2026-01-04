@@ -178,58 +178,58 @@ func PrintTotalSummary(matchCount, fileCount, totalLines int, elapsed time.Durat
 		theme.Summary.Render(fmt.Sprintf("%d", fileCount)),
 		theme.Summary.Render(fmt.Sprintf("%d", totalLines)),
 		theme.Summary.Render(elapsed.Round(time.Millisecond).String()))
-	fmt.Printf("\n%s\n", theme.Dim.Render("Tip: Even partial matches may contain extractable sub-sections. Look for common logic that could be refactored into shared helpers."))
+	fmt.Printf("\n%s\n", theme.Dim.Render("Tip: Even partial matches may contain extractable sub-sections. Look for common logic that could be refactored into shared helpers, base classes, modules or using generics functuins / types where supported."))
 }
 
 // langFromExt maps file extensions to markdown code block language hints
 var langFromExt = map[string]string{
-	".go":     "go",
-	".c":      "c",
-	".h":      "c",
-	".cpp":    "cpp",
-	".hpp":    "cpp",
-	".cc":     "cpp",
-	".cxx":    "cpp",
-	".java":   "java",
-	".js":     "javascript",
-	".jsx":    "jsx",
-	".ts":     "typescript",
-	".tsx":    "tsx",
-	".cs":     "csharp",
-	".swift":  "swift",
-	".kt":     "kotlin",
-	".kts":    "kotlin",
-	".scala":  "scala",
-	".rs":     "rust",
-	".php":    "php",
-	".py":     "python",
-	".rb":     "ruby",
-	".sh":     "bash",
-	".bash":   "bash",
-	".zsh":    "zsh",
-	".sql":    "sql",
-	".lua":    "lua",
-	".hs":     "haskell",
-	".elm":    "elm",
-	".yaml":   "yaml",
-	".yml":    "yaml",
-	".toml":   "toml",
-	".json":   "json",
-	".xml":    "xml",
-	".html":   "html",
-	".css":    "css",
-	".scss":   "scss",
-	".dart":   "dart",
-	".r":      "r",
-	".R":      "r",
-	".jl":     "julia",
-	".ex":     "elixir",
-	".exs":    "elixir",
-	".clj":    "clojure",
-	".cljs":   "clojure",
-	".v":      "v",
-	".zig":    "zig",
-	".nim":    "nim",
+	".go":    "go",
+	".c":     "c",
+	".h":     "c",
+	".cpp":   "cpp",
+	".hpp":   "cpp",
+	".cc":    "cpp",
+	".cxx":   "cpp",
+	".java":  "java",
+	".js":    "javascript",
+	".jsx":   "jsx",
+	".ts":    "typescript",
+	".tsx":   "tsx",
+	".cs":    "csharp",
+	".swift": "swift",
+	".kt":    "kotlin",
+	".kts":   "kotlin",
+	".scala": "scala",
+	".rs":    "rust",
+	".php":   "php",
+	".py":    "python",
+	".rb":    "ruby",
+	".sh":    "bash",
+	".bash":  "bash",
+	".zsh":   "zsh",
+	".sql":   "sql",
+	".lua":   "lua",
+	".hs":    "haskell",
+	".elm":   "elm",
+	".yaml":  "yaml",
+	".yml":   "yaml",
+	".toml":  "toml",
+	".json":  "json",
+	".xml":   "xml",
+	".html":  "html",
+	".css":   "css",
+	".scss":  "scss",
+	".dart":  "dart",
+	".r":     "r",
+	".R":     "r",
+	".jl":    "julia",
+	".ex":    "elixir",
+	".exs":   "elixir",
+	".clj":   "clojure",
+	".cljs":  "clojure",
+	".v":     "v",
+	".zig":   "zig",
+	".nim":   "nim",
 }
 
 // normalizeIndent removes common leading whitespace from lines
@@ -371,7 +371,7 @@ func WriteJSONResults(matches []PatternMatch, outputPath string) error {
 
 	// Create output directory
 	outputDir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
@@ -380,7 +380,7 @@ func WriteJSONResults(matches []PatternMatch, outputPath string) error {
 		return fmt.Errorf("marshaling JSON: %w", err)
 	}
 
-	if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(outputPath, jsonData, 0o644); err != nil {
 		return fmt.Errorf("writing JSON file: %w", err)
 	}
 

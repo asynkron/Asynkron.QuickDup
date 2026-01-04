@@ -153,12 +153,13 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "word-indent", "Detection strategy: word-indent")
+	strategyName := flag.String("strategy", "word-indent", "Detection strategy: word-indent, normalized-indent")
 	flag.Parse()
 
 	// Select strategy
 	strategies := map[string]Strategy{
-		"word-indent": &WordIndentStrategy{},
+		"word-indent":       &WordIndentStrategy{},
+		"normalized-indent": &NormalizedIndentStrategy{},
 	}
 	if s, ok := strategies[*strategyName]; ok {
 		defaultStrategy = s
@@ -300,13 +301,11 @@ func main() {
 	// Filter and collect matches (parallel token similarity)
 	filterStart := time.Now()
 
-	// First pass: filter blocked and low-score (cheap checks)
+	// First pass: filter blocked patterns
 	type candidate struct {
-		hash        uint64
-		locs        []PatternLocation
-		pattern     []Entry
-		uniqueWords int
-		score       int
+		hash    uint64
+		locs    []PatternLocation
+		pattern []Entry
 	}
 	var candidates []candidate
 	skippedBlocked := 0
@@ -317,12 +316,7 @@ func main() {
 		}
 		if len(locs) >= *minOccur {
 			pattern := locs[0].Pattern
-			uniqueWords := countUniqueWords(pattern)
-			// Pre-filter: need at least 3 unique words to be worth computing similarity
-			if uniqueWords < 3 {
-				continue
-			}
-			candidates = append(candidates, candidate{hash, locs, pattern, uniqueWords, 0})
+			candidates = append(candidates, candidate{hash, locs, pattern})
 		}
 	}
 
@@ -363,24 +357,17 @@ func main() {
 			continue
 		}
 		c := candidates[r.index]
-		// Score = uniqueWords × adjusted similarity
-		// Adjusted similarity maps 50%→0, 100%→1 (50% is the noise floor)
-		adjustedSim := r.similarity*2 - 1.0
-		if adjustedSim < 0 {
-			adjustedSim = 0
-		}
-		score := int(float64(c.uniqueWords) * adjustedSim)
+		score := defaultStrategy.Score(c.pattern, r.similarity)
 		if score < *minScore {
 			skippedLowScore++
 			continue
 		}
 		matches = append(matches, PatternMatch{
-			Hash:        c.hash,
-			Locations:   c.locs,
-			Pattern:     c.pattern,
-			UniqueWords: c.uniqueWords,
-			Similarity:  r.similarity,
-			Score:       score,
+			Hash:       c.hash,
+			Locations:  c.locs,
+			Pattern:    c.pattern,
+			Similarity: r.similarity,
+			Score:      score,
 		})
 	}
 	filterTime := time.Since(filterStart)
@@ -438,7 +425,7 @@ func main() {
 	for _, m := range matches[:top] {
 		fmt.Printf("\n%s %s %s %s %s:\n",
 			scoreStyle.Render(fmt.Sprintf("Score %d", m.Score)),
-			dimStyle.Render(fmt.Sprintf("[%d lines, %d unique]", len(m.Pattern), m.UniqueWords)),
+			dimStyle.Render(fmt.Sprintf("[%d lines]", len(m.Pattern))),
 			dimStyle.Render(fmt.Sprintf("%.0f%% similar", m.Similarity*100)),
 			dimStyle.Render(fmt.Sprintf("found %d times", len(m.Locations))),
 			hashStyle.Render(fmt.Sprintf("[%016x]", m.Hash)))
@@ -505,17 +492,6 @@ func main() {
 	}
 
 	for _, m := range matches {
-		// Convert pattern to string representation
-		patternStrs := make([]string, len(m.Pattern))
-		for i, e := range m.Pattern {
-			entry := e.(*WordIndentEntry)
-			if entry.IndentDelta > 0 {
-				patternStrs[i] = fmt.Sprintf("+%d %s", entry.IndentDelta, entry.Word)
-			} else {
-				patternStrs[i] = fmt.Sprintf("%d %s", entry.IndentDelta, entry.Word)
-			}
-		}
-
 		// Convert locations
 		locs := make([]JSONLocation, len(m.Locations))
 		for i, loc := range m.Locations {
@@ -529,10 +505,8 @@ func main() {
 			Hash:        fmt.Sprintf("%016x", m.Hash),
 			Score:       m.Score,
 			Lines:       len(m.Pattern),
-			UniqueWords: m.UniqueWords,
 			Similarity:  m.Similarity,
 			Occurrences: len(m.Locations),
-			Pattern:     patternStrs,
 			Locations:   locs,
 		})
 	}

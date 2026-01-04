@@ -95,12 +95,3 @@ func extractFirstWord(line string) string {
 	return trimmed[:end]
 }
 
-// Count unique words in a pattern
-func countUniqueWords(pattern []Entry) int {
-	seen := make(map[string]bool)
-	for _, e := range pattern {
-		entry := e.(*WordIndentEntry)
-		seen[entry.Word] = true
-	}
-	return len(seen)
-}

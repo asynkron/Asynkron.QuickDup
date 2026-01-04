@@ -10,12 +10,11 @@ type PatternLocation struct {
 
 // PatternMatch represents a matched pattern with all its occurrences
 type PatternMatch struct {
-	Hash        uint64
-	Locations   []PatternLocation
-	Pattern     []Entry // representative pattern (first occurrence)
-	UniqueWords int     // number of unique words in pattern
-	Similarity  float64 // average token similarity across occurrences (0.0-1.0)
-	Score       int     // combined score: uniqueWords + similarity bonus
+	Hash       uint64
+	Locations  []PatternLocation
+	Pattern    []Entry // representative pattern (first occurrence)
+	Similarity float64 // average token similarity across occurrences (0.0-1.0)
+	Score      int     // strategy-computed score
 }
 
 // JSON output structures
@@ -29,10 +28,8 @@ type JSONPattern struct {
 	Hash        string         `json:"hash"`
 	Score       int            `json:"score"`
 	Lines       int            `json:"lines"`
-	UniqueWords int            `json:"unique_words"`
 	Similarity  float64        `json:"similarity"`
 	Occurrences int            `json:"occurrences"`
-	Pattern     []string       `json:"pattern"`
 	Locations   []JSONLocation `json:"locations"`
 }
 

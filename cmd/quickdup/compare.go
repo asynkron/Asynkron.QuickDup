@@ -149,9 +149,6 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 				hashStyle.Render(fmt.Sprintf("[%s]", l.hash)),
 				summaryStyle.Render(fmt.Sprintf("%d", l.removed)),
 				scoreStyle.Render(fmt.Sprintf("%d", l.headCount)))
-			if len(l.pattern.Pattern) > 0 {
-				fmt.Printf("  Pattern preview: %s\n", dimStyle.Render(truncate(l.pattern.Pattern[0], 60)))
-			}
 			fmt.Printf("  Remaining locations:\n")
 			for _, loc := range l.pattern.Locations {
 				// Make path relative by stripping worktree prefix

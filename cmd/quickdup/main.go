@@ -343,7 +343,20 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
+	strategyName := flag.String("strategy", "", "Detection strategy: word-indent (default), full-line")
 	flag.Parse()
+
+	// Select strategy if specified
+	var activeStrategy Strategy
+	if *strategyName != "" {
+		var ok bool
+		activeStrategy, ok = strategies[*strategyName]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Unknown strategy: %s\nAvailable: word-indent, full-line\n", *strategyName)
+			os.Exit(1)
+		}
+		fmt.Printf("Using strategy: %s\n", activeStrategy.Name())
+	}
 
 	// Handle compare mode
 	if *compare != "" {
@@ -1656,4 +1669,202 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// StrategyLocation represents a pattern location using SourceLine
+type StrategyLocation struct {
+	Filename   string
+	LineStart  int
+	EntryIndex int
+	Lines      []*SourceLine
+}
+
+// StrategyMatch represents a detected pattern using Strategy
+type StrategyMatch struct {
+	Hash       uint64
+	Locations  []StrategyLocation
+	Lines      []*SourceLine // representative (first occurrence)
+	Score      int
+	Similarity float64
+}
+
+// parseFilesRaw parses all files keeping all lines
+func parseFilesRaw(files []string, excludePatterns []string) map[string][]*SourceLine {
+	result := make(map[string][]*SourceLine)
+	var mu sync.Mutex
+	numWorkers := runtime.NumCPU()
+
+	work := make(chan string, len(files))
+	for _, f := range files {
+		work <- f
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range work {
+				lines, err := parseFileRaw(path)
+				if err != nil {
+					continue
+				}
+				mu.Lock()
+				result[path] = lines
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+	return result
+}
+
+// detectWithStrategy detects patterns using the given strategy
+func detectWithStrategy(fileData map[string][]*SourceLine, strategy Strategy, minOccur, minSize int) map[uint64][]StrategyLocation {
+	allPatterns := make(map[uint64][]StrategyLocation)
+	numWorkers := runtime.NumCPU()
+
+	// Build file list
+	files := make([]string, 0, len(fileData))
+	for f := range fileData {
+		files = append(files, f)
+	}
+
+	// Pre-filter lines per file based on strategy
+	filteredData := make(map[string][]*SourceLine)
+	filteredIndices := make(map[string][]int) // maps filtered index -> original index
+	for filename, lines := range fileData {
+		var filtered []*SourceLine
+		var indices []int
+		for i, line := range lines {
+			if !strategy.ShouldSkip(line) {
+				filtered = append(filtered, line)
+				indices = append(indices, i)
+			}
+		}
+		filteredData[filename] = filtered
+		filteredIndices[filename] = indices
+	}
+
+	// Step 1: Generate base patterns
+	basePatterns := make(map[uint64][]StrategyLocation)
+	var mu sync.Mutex
+
+	work := make(chan string, len(files))
+	for _, f := range files {
+		work <- f
+	}
+	close(work)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			local := make(map[uint64][]StrategyLocation)
+
+			for filename := range work {
+				lines := filteredData[filename]
+				n := len(lines)
+
+				for i := 0; i <= n-minSize; i++ {
+					window := lines[i : i+minSize]
+					hash := strategy.Hash(window)
+					windowCopy := make([]*SourceLine, len(window))
+					copy(windowCopy, window)
+
+					local[hash] = append(local[hash], StrategyLocation{
+						Filename:   filename,
+						LineStart:  window[0].LineNumber,
+						EntryIndex: i,
+						Lines:      windowCopy,
+					})
+				}
+			}
+
+			mu.Lock()
+			for hash, locs := range local {
+				basePatterns[hash] = append(basePatterns[hash], locs...)
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	// Step 2: Filter to >= minOccur
+	survivors := make(map[uint64][]StrategyLocation)
+	for hash, locs := range basePatterns {
+		if len(locs) >= minOccur {
+			survivors[hash] = locs
+		}
+	}
+	previousGen := survivors
+
+	// Step 3: Grow patterns
+	currentLen := minSize
+	for len(survivors) > 0 {
+		currentLen++
+
+		// Extend all locations
+		nextPatterns := make(map[uint64][]StrategyLocation)
+
+		for _, locs := range survivors {
+			for _, loc := range locs {
+				lines := filteredData[loc.Filename]
+				endIdx := loc.EntryIndex + currentLen
+
+				if endIdx > len(lines) {
+					continue
+				}
+
+				window := lines[loc.EntryIndex:endIdx]
+				hash := strategy.Hash(window)
+				windowCopy := make([]*SourceLine, len(window))
+				copy(windowCopy, window)
+
+				nextPatterns[hash] = append(nextPatterns[hash], StrategyLocation{
+					Filename:   loc.Filename,
+					LineStart:  loc.LineStart,
+					EntryIndex: loc.EntryIndex,
+					Lines:      windowCopy,
+				})
+			}
+		}
+
+		// Filter and track growth
+		type occKey struct {
+			file string
+			idx  int
+		}
+		grewToChild := make(map[occKey]bool)
+		survivors = make(map[uint64][]StrategyLocation)
+		for hash, locs := range nextPatterns {
+			if len(locs) >= minOccur {
+				survivors[hash] = locs
+				for _, loc := range locs {
+					grewToChild[occKey{loc.Filename, loc.EntryIndex}] = true
+				}
+			}
+		}
+
+		// Add previous gen that didn't grow
+		for hash, locs := range previousGen {
+			var filteredLocs []StrategyLocation
+			for _, loc := range locs {
+				if !grewToChild[occKey{loc.Filename, loc.EntryIndex}] {
+					filteredLocs = append(filteredLocs, loc)
+				}
+			}
+			if len(filteredLocs) >= minOccur {
+				allPatterns[hash] = filteredLocs
+			}
+		}
+
+		previousGen = survivors
+	}
+
+	fmt.Printf("Strategy growth stopped at %d lines\n", currentLen-1)
+	return allPatterns
 }

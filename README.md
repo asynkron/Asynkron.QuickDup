@@ -194,9 +194,8 @@ This is a **heuristic candidate generator**:
 
 - **False positives** — Structural similarity doesn't guarantee semantic duplication
 - **False negatives** — Different structure with same semantics won't match
-- **First word only** — `if x > 0` and `if y < 0` look identical
 
-The token similarity filter catches most structural false positives. For the rest, let AI verify.
+Token similarity filtering and clustering catch most structural false positives. Patterns like `if x > 0` and `if y < 0` will have low similarity scores and either be filtered out or placed in separate clusters.
 
 ## License
 

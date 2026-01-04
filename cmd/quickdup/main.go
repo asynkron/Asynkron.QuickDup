@@ -30,36 +30,6 @@ var (
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
-// SourceLine represents a raw line from the source file with metadata
-type SourceLine struct {
-	LineNumber  int
-	Line        string
-	Indent      int
-	IndentDelta int // delta from previous non-blank/non-comment line
-	Word        string
-	IsBlank     bool
-	IsComment   bool
-}
-
-// Strategy defines how to detect duplicate patterns
-type Strategy interface {
-	// Name returns the strategy identifier
-	Name() string
-
-	// ShouldSkip returns true if this line should be excluded from pattern matching
-	ShouldSkip(line *SourceLine) bool
-
-	// Hash computes a hash for a window of source lines
-	Hash(lines []*SourceLine) uint64
-
-	// Signature returns a string representation for display/comparison
-	Signature(lines []*SourceLine) string
-
-	// Score returns a quality score for a pattern (higher = more significant)
-	Score(lines []*SourceLine, similarity float64) int
-}
-
-// IndentAndWord is the legacy entry type (used by default strategy)
 type IndentAndWord struct {
 	LineNumber  int
 	IndentDelta int
@@ -109,93 +79,6 @@ type JSONOutput struct {
 type IgnoreFile struct {
 	Description string   `json:"description"`
 	Ignored     []string `json:"ignored"`
-}
-
-// WordIndentStrategy is the default strategy that uses first word + indent delta
-type WordIndentStrategy struct{}
-
-func (s *WordIndentStrategy) Name() string {
-	return "word-indent"
-}
-
-func (s *WordIndentStrategy) ShouldSkip(line *SourceLine) bool {
-	return line.IsBlank || line.IsComment
-}
-
-func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
-	h := fnv.New64a()
-	for _, line := range lines {
-		// Use pre-computed IndentDelta and Word (matches original hashPattern format)
-		fmt.Fprintf(h, "%d|%s\n", line.IndentDelta, line.Word)
-	}
-	return h.Sum64()
-}
-
-func (s *WordIndentStrategy) Signature(lines []*SourceLine) string {
-	var parts []string
-	for _, line := range lines {
-		parts = append(parts, line.Word)
-	}
-	return strings.Join(parts, " ")
-}
-
-func (s *WordIndentStrategy) Score(lines []*SourceLine, similarity float64) int {
-	// Count unique words (matches countUniqueWords behavior - includes all words)
-	seen := make(map[string]bool)
-	for _, line := range lines {
-		seen[line.Word] = true
-	}
-	uniqueWords := len(seen)
-
-	// Adjusted similarity: 50%→0, 100%→1
-	adjustedSim := similarity*2 - 1.0
-	if adjustedSim < 0 {
-		adjustedSim = 0
-	}
-	return int(float64(uniqueWords) * adjustedSim)
-}
-
-// FullLineStrategy matches based on complete line content (ignoring leading whitespace)
-type FullLineStrategy struct{}
-
-func (s *FullLineStrategy) Name() string {
-	return "full-line"
-}
-
-func (s *FullLineStrategy) ShouldSkip(line *SourceLine) bool {
-	return line.IsBlank || line.IsComment
-}
-
-func (s *FullLineStrategy) Hash(lines []*SourceLine) uint64 {
-	h := fnv.New64a()
-	for _, line := range lines {
-		trimmed := strings.TrimLeft(line.Line, " \t")
-		h.Write([]byte(trimmed))
-		h.Write([]byte{'\n'})
-	}
-	return h.Sum64()
-}
-
-func (s *FullLineStrategy) Signature(lines []*SourceLine) string {
-	if len(lines) > 0 {
-		return strings.TrimSpace(lines[0].Line)
-	}
-	return ""
-}
-
-func (s *FullLineStrategy) Score(lines []*SourceLine, similarity float64) int {
-	// Score based on total content length
-	totalLen := 0
-	for _, line := range lines {
-		totalLen += len(strings.TrimSpace(line.Line))
-	}
-	return totalLen / 10 // Rough score
-}
-
-// Available strategies
-var strategies = map[string]Strategy{
-	"word-indent": &WordIndentStrategy{},
-	"full-line":   &FullLineStrategy{},
 }
 
 // CachedFile stores parsed entries with mod time for incremental parsing
@@ -339,20 +222,7 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "", "Detection strategy: word-indent (default), full-line")
 	flag.Parse()
-
-	// Select strategy if specified
-	var activeStrategy Strategy
-	if *strategyName != "" {
-		var ok bool
-		activeStrategy, ok = strategies[*strategyName]
-		if !ok {
-			fmt.Fprintf(os.Stderr, "Unknown strategy: %s\nAvailable: word-indent, full-line\n", *strategyName)
-			os.Exit(1)
-		}
-		fmt.Printf("Using strategy: %s\n", activeStrategy.Name())
-	}
 
 	// Handle compare mode
 	if *compare != "" {
@@ -448,28 +318,20 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Phase 1: Parse all files in parallel
+	// Phase 1: Parse all files in parallel (with caching)
 	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
 
 	parseStart := time.Now()
-	var fileData map[string][]IndentAndWord
-	var cacheHits, cacheMisses int
+	var cache *FileCache
+	if !*noCache {
+		cache = loadCache(folder)
+	}
 
-	if activeStrategy != nil {
-		// Use strategy-based parsing (no cache for now with strategies)
-		fileData = parseFilesWithStrategy(files, activeStrategy)
-		cacheMisses = len(files)
-	} else {
-		// Default parsing with cache support
-		var cache *FileCache
-		if !*noCache {
-			cache = loadCache(folder)
-		}
-		fileData, cacheHits, cacheMisses = parseFilesWithCache(files, cache)
-		// Save updated cache
-		if !*noCache && cacheMisses > 0 {
-			saveCache(folder, files, fileData)
-		}
+	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
+
+	// Save updated cache
+	if !*noCache && cacheMisses > 0 {
+		saveCache(folder, files, fileData)
 	}
 	parseTime := time.Since(parseStart)
 
@@ -997,55 +859,6 @@ func parseFile(path string) ([]IndentAndWord, error) {
 	return entries, nil
 }
 
-// parseFileRaw parses a file keeping ALL lines including blanks and comments
-func parseFileRaw(path string) ([]*SourceLine, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []*SourceLine
-	scanner := bufio.NewScanner(file)
-	lineNumber := 0
-	prevIndent := 0
-
-	for scanner.Scan() {
-		lineNumber++
-		line := scanner.Text()
-
-		isBlank := isWhitespaceOnly(line)
-		isComment := !isBlank && isCommentOnly(line)
-
-		// For blank/comment lines: indent=0, word=""
-		indent := 0
-		indentDelta := 0
-		word := ""
-		if !isBlank && !isComment {
-			indent = calculateIndent(line)
-			indentDelta = indent - prevIndent
-			prevIndent = indent
-			word = extractFirstWord(line)
-		}
-
-		lines = append(lines, &SourceLine{
-			LineNumber:  lineNumber,
-			Line:        line,
-			Indent:      indent,
-			IndentDelta: indentDelta,
-			Word:        word,
-			IsBlank:     isBlank,
-			IsComment:   isComment,
-		})
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return lines, nil
-}
-
 func isWhitespaceOnly(line string) bool {
 	for _, r := range line {
 		if r != ' ' && r != '\t' {
@@ -1229,8 +1042,7 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 
 	// Step 3: Grow patterns by extending the window
 	currentLen := minSize
-	maxLen := 200 // Safety limit to prevent infinite growth
-	for len(survivors) > 0 && currentLen < maxLen {
+	for len(survivors) > 0 {
 		currentLen++
 
 		// Extend all locations in parallel
@@ -1683,83 +1495,3 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
-
-// parseFilesRaw parses all files keeping all lines
-func parseFilesRaw(files []string, excludePatterns []string) map[string][]*SourceLine {
-	result := make(map[string][]*SourceLine)
-	var mu sync.Mutex
-	numWorkers := runtime.NumCPU()
-
-	work := make(chan string, len(files))
-	for _, f := range files {
-		work <- f
-	}
-	close(work)
-
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range work {
-				lines, err := parseFileRaw(path)
-				if err != nil {
-					continue
-				}
-				mu.Lock()
-				result[path] = lines
-				mu.Unlock()
-			}
-		}()
-	}
-
-	wg.Wait()
-	return result
-}
-
-// parseFilesWithStrategy parses files and filters entries using the strategy
-// Returns IndentAndWord format so the rest of the pipeline is unchanged
-func parseFilesWithStrategy(files []string, strategy Strategy) map[string][]IndentAndWord {
-	result := make(map[string][]IndentAndWord)
-	var mu sync.Mutex
-	numWorkers := runtime.NumCPU()
-
-	work := make(chan string, len(files))
-	for _, f := range files {
-		work <- f
-	}
-	close(work)
-
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range work {
-				allLines, err := parseFileRaw(path)
-				if err != nil {
-					continue
-				}
-				// Filter to entries using strategy and convert to IndentAndWord
-				var entries []IndentAndWord
-				for _, line := range allLines {
-					if !strategy.ShouldSkip(line) {
-						entries = append(entries, IndentAndWord{
-							LineNumber:  line.LineNumber,
-							IndentDelta: line.IndentDelta,
-							Word:        line.Word,
-							SourceLine:  line.Line,
-						})
-					}
-				}
-				mu.Lock()
-				result[path] = entries
-				mu.Unlock()
-			}
-		}()
-	}
-
-	wg.Wait()
-	return result
-}
-

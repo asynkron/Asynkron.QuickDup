@@ -448,26 +448,28 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Use strategy-based detection if a strategy is specified
-	if activeStrategy != nil {
-		runWithStrategy(activeStrategy, files, folder, *minOccur, *minSize, *minScore, *minSimilarity, *topN, *githubAnnotations, *githubLevel, gitDiff, changedFiles)
-		return
-	}
-
-	// Phase 1: Parse all files in parallel (with caching)
+	// Phase 1: Parse all files in parallel
 	fmt.Printf("Scanning %d files using %d workers...\n", totalFiles, runtime.NumCPU())
 
 	parseStart := time.Now()
-	var cache *FileCache
-	if !*noCache {
-		cache = loadCache(folder)
-	}
+	var fileData map[string][]IndentAndWord
+	var cacheHits, cacheMisses int
 
-	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
-
-	// Save updated cache
-	if !*noCache && cacheMisses > 0 {
-		saveCache(folder, files, fileData)
+	if activeStrategy != nil {
+		// Use strategy-based parsing (no cache for now with strategies)
+		fileData = parseFilesWithStrategy(files, activeStrategy)
+		cacheMisses = len(files)
+	} else {
+		// Default parsing with cache support
+		var cache *FileCache
+		if !*noCache {
+			cache = loadCache(folder)
+		}
+		fileData, cacheHits, cacheMisses = parseFilesWithCache(files, cache)
+		// Save updated cache
+		if !*noCache && cacheMisses > 0 {
+			saveCache(folder, files, fileData)
+		}
 	}
 	parseTime := time.Since(parseStart)
 
@@ -1227,7 +1229,8 @@ func detectPatterns(fileData map[string][]IndentAndWord, totalFiles int, minOccu
 
 	// Step 3: Grow patterns by extending the window
 	currentLen := minSize
-	for len(survivors) > 0 {
+	maxLen := 200 // Safety limit to prevent infinite growth
+	for len(survivors) > 0 && currentLen < maxLen {
 		currentLen++
 
 		// Extend all locations in parallel
@@ -1681,23 +1684,6 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// StrategyLocation represents a pattern location using SourceLine
-type StrategyLocation struct {
-	Filename   string
-	LineStart  int
-	EntryIndex int
-	Lines      []*SourceLine
-}
-
-// StrategyMatch represents a detected pattern using Strategy
-type StrategyMatch struct {
-	Hash       uint64
-	Locations  []StrategyLocation
-	Lines      []*SourceLine // representative (first occurrence)
-	Score      int
-	Similarity float64
-}
-
 // parseFilesRaw parses all files keeping all lines
 func parseFilesRaw(files []string, excludePatterns []string) map[string][]*SourceLine {
 	result := make(map[string][]*SourceLine)
@@ -1732,8 +1718,9 @@ func parseFilesRaw(files []string, excludePatterns []string) map[string][]*Sourc
 }
 
 // parseFilesWithStrategy parses files and filters entries using the strategy
-func parseFilesWithStrategy(files []string, strategy Strategy) map[string][]*SourceLine {
-	result := make(map[string][]*SourceLine)
+// Returns IndentAndWord format so the rest of the pipeline is unchanged
+func parseFilesWithStrategy(files []string, strategy Strategy) map[string][]IndentAndWord {
+	result := make(map[string][]IndentAndWord)
 	var mu sync.Mutex
 	numWorkers := runtime.NumCPU()
 
@@ -1753,11 +1740,16 @@ func parseFilesWithStrategy(files []string, strategy Strategy) map[string][]*Sou
 				if err != nil {
 					continue
 				}
-				// Filter to entries using strategy
-				var entries []*SourceLine
+				// Filter to entries using strategy and convert to IndentAndWord
+				var entries []IndentAndWord
 				for _, line := range allLines {
 					if !strategy.ShouldSkip(line) {
-						entries = append(entries, line)
+						entries = append(entries, IndentAndWord{
+							LineNumber:  line.LineNumber,
+							IndentDelta: line.IndentDelta,
+							Word:        line.Word,
+							SourceLine:  line.Line,
+						})
 					}
 				}
 				mu.Lock()
@@ -1771,348 +1763,3 @@ func parseFilesWithStrategy(files []string, strategy Strategy) map[string][]*Sou
 	return result
 }
 
-// detectWithStrategy detects patterns using the given strategy
-// fileData should already be filtered (only entries, no blanks/comments)
-func detectWithStrategy(fileData map[string][]*SourceLine, strategy Strategy, minOccur, minSize int) map[uint64][]StrategyLocation {
-	allPatterns := make(map[uint64][]StrategyLocation)
-	numWorkers := runtime.NumCPU()
-
-	// Build file list
-	files := make([]string, 0, len(fileData))
-	for f := range fileData {
-		files = append(files, f)
-	}
-
-	// Step 1: Generate base patterns
-	basePatterns := make(map[uint64][]StrategyLocation)
-	var mu sync.Mutex
-
-	work := make(chan string, len(files))
-	for _, f := range files {
-		work <- f
-	}
-	close(work)
-
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			local := make(map[uint64][]StrategyLocation)
-
-			for filename := range work {
-				lines := fileData[filename]
-				n := len(lines)
-
-				for i := 0; i <= n-minSize; i++ {
-					window := lines[i : i+minSize]
-					hash := strategy.Hash(window)
-					windowCopy := make([]*SourceLine, len(window))
-					copy(windowCopy, window)
-
-					local[hash] = append(local[hash], StrategyLocation{
-						Filename:   filename,
-						LineStart:  window[0].LineNumber,
-						EntryIndex: i,
-						Lines:      windowCopy,
-					})
-				}
-			}
-
-			mu.Lock()
-			for hash, locs := range local {
-				basePatterns[hash] = append(basePatterns[hash], locs...)
-			}
-			mu.Unlock()
-		}()
-	}
-	wg.Wait()
-
-	// Step 2: Filter to >= minOccur
-	survivors := make(map[uint64][]StrategyLocation)
-	for hash, locs := range basePatterns {
-		if len(locs) >= minOccur {
-			survivors[hash] = locs
-		}
-	}
-	previousGen := survivors
-
-	// Step 3: Grow patterns
-	currentLen := minSize
-	for len(survivors) > 0 {
-		currentLen++
-
-		// Extend all locations
-		nextPatterns := make(map[uint64][]StrategyLocation)
-
-		for _, locs := range survivors {
-			for _, loc := range locs {
-				lines := fileData[loc.Filename]
-				endIdx := loc.EntryIndex + currentLen
-
-				if endIdx > len(lines) {
-					continue
-				}
-
-				window := lines[loc.EntryIndex:endIdx]
-				hash := strategy.Hash(window)
-				windowCopy := make([]*SourceLine, len(window))
-				copy(windowCopy, window)
-
-				nextPatterns[hash] = append(nextPatterns[hash], StrategyLocation{
-					Filename:   loc.Filename,
-					LineStart:  loc.LineStart,
-					EntryIndex: loc.EntryIndex,
-					Lines:      windowCopy,
-				})
-			}
-		}
-
-		// Filter and track growth
-		type occKey struct {
-			file string
-			idx  int
-		}
-		grewToChild := make(map[occKey]bool)
-		survivors = make(map[uint64][]StrategyLocation)
-		for hash, locs := range nextPatterns {
-			if len(locs) >= minOccur {
-				survivors[hash] = locs
-				for _, loc := range locs {
-					grewToChild[occKey{loc.Filename, loc.EntryIndex}] = true
-				}
-			}
-		}
-
-		// Add previous gen that didn't grow (with overlap filtering)
-		prevLen := currentLen - 1
-		for hash, locs := range previousGen {
-			var filteredLocs []StrategyLocation
-			for _, loc := range locs {
-				if !grewToChild[occKey{loc.Filename, loc.EntryIndex}] {
-					filteredLocs = append(filteredLocs, loc)
-				}
-			}
-			// Apply overlap filtering like the original
-			filteredLocs = filterOverlappingStrategyLocs(filteredLocs, prevLen)
-			if len(filteredLocs) >= minOccur {
-				allPatterns[hash] = filteredLocs
-			}
-		}
-
-		previousGen = survivors
-	}
-
-	fmt.Printf("Strategy growth stopped at %d lines\n", currentLen-1)
-	return allPatterns
-}
-
-// runWithStrategy runs the full detection and output using a Strategy
-func runWithStrategy(strategy Strategy, files []string, folder string, minOccur, minSize, minScore int, minSimilarity float64, topN int, githubAnnotations bool, githubLevel string, gitDiff *string, changedFiles map[string]bool) {
-	startTime := time.Now()
-
-	fmt.Printf("Scanning %d files using %d workers...\n", len(files), runtime.NumCPU())
-
-	// Parse files and filter entries using strategy
-	parseStart := time.Now()
-	fileData := parseFilesWithStrategy(files, strategy)
-	parseTime := time.Since(parseStart)
-
-	// Count total entries (lines of code after filtering)
-	totalEntries := 0
-	for _, entries := range fileData {
-		totalEntries += len(entries)
-	}
-	fmt.Printf("Parsed %d files in %s (%d entries)\n", len(fileData), parseTime.Round(time.Millisecond), totalEntries)
-
-	// Detect patterns
-	detectStart := time.Now()
-	fmt.Printf("Detecting patterns with strategy '%s'...\n", strategy.Name())
-	patterns := detectWithStrategy(fileData, strategy, minOccur, minSize)
-	detectTime := time.Since(detectStart)
-	fmt.Printf("Pattern detection took %s\n", detectTime.Round(time.Millisecond))
-
-	// Filter and convert to matches with scoring
-	filterStart := time.Now()
-	var matches []StrategyMatch
-	skippedBlocked := 0
-	skippedLowScore := 0
-	skippedLowSimilarity := 0
-
-	for hash, locs := range patterns {
-		if len(locs) < minOccur {
-			continue
-		}
-
-		// Check blocked hashes (common useless patterns)
-		if blockedHashes[hash] {
-			skippedBlocked++
-			continue
-		}
-
-		// Compute similarity using token-based comparison
-		similarity := computeStrategySimilarity(locs)
-		if similarity < minSimilarity {
-			skippedLowSimilarity++
-			continue
-		}
-
-		score := strategy.Score(locs[0].Lines, similarity)
-		if score < minScore {
-			skippedLowScore++
-			continue
-		}
-
-		matches = append(matches, StrategyMatch{
-			Hash:       hash,
-			Locations:  locs,
-			Lines:      locs[0].Lines,
-			Score:      score,
-			Similarity: similarity,
-		})
-	}
-
-	filterTime := time.Since(filterStart)
-	fmt.Printf("Filtering took %s\n", filterTime.Round(time.Millisecond))
-	if skippedBlocked > 0 {
-		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
-	}
-	if skippedLowScore > 0 {
-		fmt.Printf("Filtered %d low-score patterns (score < %d)\n", skippedLowScore, minScore)
-	}
-	if skippedLowSimilarity > 0 {
-		fmt.Printf("Filtered %d low-similarity patterns (similarity < %.0f%%)\n", skippedLowSimilarity, minSimilarity*100)
-	}
-
-	// Sort by score descending
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Score > matches[j].Score
-	})
-
-	// Limit to top N
-	top := topN
-	if len(matches) < top {
-		top = len(matches)
-	}
-
-	// GitHub annotations
-	if githubAnnotations && top > 0 {
-		for _, m := range matches[:top] {
-			loc := m.Locations[0]
-			// Skip if git-diff specified and file not changed
-			if *gitDiff != "" && !changedFiles[loc.Filename] {
-				continue
-			}
-			otherLocs := make([]string, 0, len(m.Locations)-1)
-			for _, other := range m.Locations[1:] {
-				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
-			}
-			endLine := loc.LineStart + len(m.Lines) - 1
-			msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
-			fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
-				githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Lines), m.Similarity*100, m.Score, msg)
-		}
-		fmt.Println()
-	}
-
-	// Output results
-	fmt.Printf("\nFound %s patterns with %d+ occurrences (showing top %d by score)\n\n",
-		summaryStyle.Render(fmt.Sprintf("%d", len(matches))), minOccur, top)
-
-	for _, m := range matches[:top] {
-		fmt.Printf("\n%s %s %s %s %s:\n",
-			scoreStyle.Render(fmt.Sprintf("Score %d", m.Score)),
-			dimStyle.Render(fmt.Sprintf("[%d lines]", len(m.Lines))),
-			dimStyle.Render(fmt.Sprintf("%.0f%% similar", m.Similarity*100)),
-			dimStyle.Render(fmt.Sprintf("found %d times", len(m.Locations))),
-			hashStyle.Render(fmt.Sprintf("[%x]", m.Hash)))
-
-		for _, loc := range m.Locations {
-			fmt.Printf("  %s\n", locationStyle.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
-		}
-	}
-
-	// Summary
-	fmt.Printf("\nTotal: %d duplicate patterns in %d files (%d entries) in %s\n",
-		len(matches), len(fileData), totalEntries, time.Since(startTime).Round(time.Millisecond))
-}
-
-// computeStrategySimilarity computes average similarity between pattern occurrences
-func computeStrategySimilarity(locs []StrategyLocation) float64 {
-	if len(locs) < 2 {
-		return 1.0
-	}
-
-	// Compare line content between occurrences
-	var totalSim float64
-	pairs := 0
-
-	for i := 0; i < len(locs); i++ {
-		for j := i + 1; j < len(locs); j++ {
-			sim := compareLines(locs[i].Lines, locs[j].Lines)
-			totalSim += sim
-			pairs++
-		}
-	}
-
-	if pairs == 0 {
-		return 1.0
-	}
-	return totalSim / float64(pairs)
-}
-
-// compareLines compares two line sequences for similarity using token-based comparison
-func compareLines(a, b []*SourceLine) float64 {
-	if len(a) != len(b) {
-		return 0.0
-	}
-	if len(a) == 0 {
-		return 1.0
-	}
-
-	// Use token-based similarity like the original
-	var totalSim float64
-	for i := range a {
-		tokensA := tokenizeLine(a[i].Line)
-		tokensB := tokenizeLine(b[i].Line)
-		totalSim += tokenSimilarity(tokensA, tokensB)
-	}
-	return totalSim / float64(len(a))
-}
-
-// filterOverlappingStrategyLocs removes adjacent occurrences within the same file
-func filterOverlappingStrategyLocs(locs []StrategyLocation, patternLen int) []StrategyLocation {
-	if len(locs) <= 1 {
-		return locs
-	}
-
-	// Group by filename
-	byFile := make(map[string][]StrategyLocation)
-	for _, loc := range locs {
-		byFile[loc.Filename] = append(byFile[loc.Filename], loc)
-	}
-
-	var result []StrategyLocation
-	for _, fileLocs := range byFile {
-		if len(fileLocs) == 1 {
-			result = append(result, fileLocs[0])
-			continue
-		}
-
-		// Sort by EntryIndex
-		sort.Slice(fileLocs, func(i, j int) bool {
-			return fileLocs[i].EntryIndex < fileLocs[j].EntryIndex
-		})
-
-		// Keep non-overlapping
-		lastEnd := -1
-		for _, loc := range fileLocs {
-			if loc.EntryIndex >= lastEnd {
-				result = append(result, loc)
-				lastEnd = loc.EntryIndex + patternLen
-			}
-		}
-	}
-
-	return result
-}

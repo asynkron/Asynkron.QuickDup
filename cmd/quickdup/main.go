@@ -97,8 +97,8 @@ var commentPrefix string
 func main() {
 	path := flag.String("path", ".", "Path to scan")
 	ext := flag.String("ext", ".go", "File extension to scan")
-	minOccur := flag.Int("min", 3, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 3, "Minimum score to report (uniqueWords × adjusted similarity)")
+	minOccur := flag.Int("min", 2, "Minimum occurrences to report")
+	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords × adjusted similarity)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	minSimilarity := flag.Float64("min-similarity", 0.5, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
@@ -109,8 +109,8 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "word-indent", "Detection strategy: word-indent, normalized-indent")
-	selectRange := flag.String("select", "", "Select patterns to show in detail (format: skip..limit, e.g., 0..3)")
+	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent")
+	selectRange := flag.String("select", "0..5", "Select patterns to show in detail (format: skip..limit, e.g., 0..3)")
 	flag.Parse()
 
 	// Select strategy

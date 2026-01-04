@@ -21,6 +21,9 @@ import (
 )
 
 var (
+	// Default strategy
+	defaultStrategy Strategy = &WordIndentStrategy{}
+
 	// Styles
 	scoreStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	hashStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
@@ -888,13 +891,17 @@ func parseFile(path string) ([]IndentAndWord, error) {
 		lineNumber++
 		line := scanner.Text()
 
-		// Skip whitespace-only lines
-		if isWhitespaceOnly(line) {
-			continue
+		isBlank := isWhitespaceOnly(line)
+		isComment := !isBlank && isCommentOnly(line)
+
+		srcLine := &SourceLine{
+			LineNumber: lineNumber,
+			Line:       line,
+			IsBlank:    isBlank,
+			IsComment:  isComment,
 		}
 
-		// Skip comment-only lines
-		if isCommentOnly(line) {
+		if defaultStrategy.ShouldSkip(srcLine) {
 			continue
 		}
 

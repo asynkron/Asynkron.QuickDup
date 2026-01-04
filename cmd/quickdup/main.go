@@ -274,7 +274,19 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
+	strategyName := flag.String("strategy", "word-indent", "Detection strategy: word-indent")
 	flag.Parse()
+
+	// Select strategy
+	strategies := map[string]Strategy{
+		"word-indent": &WordIndentStrategy{},
+	}
+	if s, ok := strategies[*strategyName]; ok {
+		defaultStrategy = s
+	} else {
+		fmt.Fprintf(os.Stderr, "Unknown strategy: %s\n", *strategyName)
+		os.Exit(1)
+	}
 
 	// Handle compare mode
 	if *compare != "" {

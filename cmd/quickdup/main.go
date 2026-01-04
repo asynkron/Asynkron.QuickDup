@@ -195,7 +195,13 @@ func main() {
 			// Check exclude patterns
 			excluded := false
 			for _, pattern := range excludePatterns {
+				// Check if pattern matches basename (glob) or is contained in path (substring)
 				if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+					excluded = true
+					break
+				}
+				// Also check if pattern is a substring of the path (for directory patterns like ".Tests/")
+				if strings.Contains(path, pattern) {
 					excluded = true
 					break
 				}

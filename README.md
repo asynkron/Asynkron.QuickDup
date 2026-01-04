@@ -42,6 +42,12 @@ Comments and blank lines are skipped. Comment prefixes are auto-detected by file
 Example:
 <img src="assets/images/code-shape-fingerprint.png" width="100%" />
 
+This pattern, generates a fingerprint sequence based on the indentation deltas and first words that is deterministic, every occurance of this pattern will yield the same fingerprint sequence.
+
+The fingerprint may seem too naive, but in practice it captures the **structural shape** of code well enough to find "candidate" duplicates quickly, the token similarity phase later filters out most of the false positives.
+
+The actual identification of duplicates happens after phase 3, you feed this information to an AI model to verify if the candidates are true duplicates or not, and either automatically refactor them or present them to a human for review.
+
 ### Phase 2: Grow-Based Pattern Detection (Parallel)
 
 1. Generate base patterns of minimum size (default: 3 lines)
@@ -60,13 +66,12 @@ Patterns with similar structure but different actual code are filtered:
 3. Filter patterns below threshold (default: 50%)
 4. Score patterns: `uniqueWords + (similarity × 5)`
 
-This eliminates false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
+This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
 
 ### Phase 4: Output
 
 Results written to `.quickdup/` directory:
 - `results.json` — Machine-readable patterns with locations
-- `patterns.md` — Human-readable code snippets
 
 ## Installation
 

@@ -76,6 +76,17 @@ Results written to `.quickdup/` directory:
 
 ## Installation
 
+**Linux/macOS:**
+```bash
+curl -sSL https://raw.githubusercontent.com/asynkron/Asynkron.QuickDup/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/asynkron/Asynkron.QuickDup/main/install.ps1 | iex
+```
+
+**From source:**
 ```bash
 go install github.com/asynkron/Asynkron.QuickDup/cmd/quickdup@latest
 ```

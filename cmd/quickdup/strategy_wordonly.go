@@ -82,8 +82,10 @@ func (s *WordOnlyStrategy) Score(entries []Entry, similarity float64) int {
 	if adjustedSim < 0 {
 		adjustedSim = 0
 	}
-	// Base score from unique words + small bonus for length
-	return int(float64(uniqueWords)*adjustedSim) + len(entries)/20
+	// Cube similarity factor - heavily rewards high similarity
+	// 100%=1.0, 95%=0.73, 90%=0.51, 85%=0.34
+	simFactor := adjustedSim * adjustedSim * adjustedSim
+	return int(float64(uniqueWords)*simFactor) + len(entries)/20
 }
 
 func (s *WordOnlyStrategy) BlockedHashes() map[uint64]bool {

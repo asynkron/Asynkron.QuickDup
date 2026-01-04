@@ -36,6 +36,33 @@ var DefaultTheme = Theme{
 // Current theme (can be changed at runtime)
 var theme = DefaultTheme
 
+// Similarity color styles
+var (
+	simGreen      = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))  // 95%+
+	simYellowGreen = lipgloss.NewStyle().Foreground(lipgloss.Color("154")) // 85%+
+	simOrange     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // 75%+
+	simRed        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // 60%+
+	simDim        = lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // below 60%
+)
+
+// renderSimilarity returns a colorized similarity string
+func renderSimilarity(similarity float64) string {
+	pct := similarity * 100
+	text := fmt.Sprintf("%.0f%% similar", pct)
+	switch {
+	case pct >= 95:
+		return simGreen.Render(text)
+	case pct >= 85:
+		return simYellowGreen.Render(text)
+	case pct >= 75:
+		return simOrange.Render(text)
+	case pct >= 60:
+		return simRed.Render(text)
+	default:
+		return simDim.Render(text)
+	}
+}
+
 // PrintScanStart prints the initial scanning message
 func PrintScanStart(fileCount, workerCount int) {
 	fmt.Printf("Scanning %d files using %d workers...\n", fileCount, workerCount)
@@ -116,13 +143,14 @@ func PrintMatchSummary(matchCount, minOccur, top int) {
 
 // PrintMatches prints the top matches with their locations
 func PrintMatches(matches []PatternMatch, top int) {
-	for _, m := range matches[:top] {
-		fmt.Printf("\n%s %s %s %s %s:\n",
+	for i, m := range matches[:top] {
+		fmt.Printf("\n%s  %s  %s  %s  %s  %s\n",
+			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
+			theme.Hash.Render(fmt.Sprintf("[%016x]", m.Hash)),
 			theme.Score.Render(fmt.Sprintf("Score %d", m.Score)),
-			theme.Dim.Render(fmt.Sprintf("[%d lines]", len(m.Pattern))),
-			theme.Dim.Render(fmt.Sprintf("%.0f%% similar", m.Similarity*100)),
-			theme.Dim.Render(fmt.Sprintf("found %d times", len(m.Locations))),
-			theme.Hash.Render(fmt.Sprintf("[%016x]", m.Hash)))
+			renderSimilarity(m.Similarity),
+			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
+			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
 		for _, loc := range m.Locations {
 			fmt.Printf("  %s%s%s\n",
 				theme.Location.Render(loc.Filename),
@@ -300,7 +328,6 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 	// Track cluster number per hash
 	hashClusterNum := make(map[uint64]int)
 
-	var sb strings.Builder
 	for i, m := range matches {
 		// Determine if this hash has multiple clusters
 		clusterInfo := ""
@@ -309,10 +336,18 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 			clusterInfo = fmt.Sprintf(" (Cluster %d/%d)", hashClusterNum[m.Hash], hashCounts[m.Hash])
 		}
 
-		sb.WriteString(fmt.Sprintf("## Pattern %d%s\n\n", i+1, clusterInfo))
-		sb.WriteString(fmt.Sprintf("**Hash:** `%016x`  **Score:** %d  **Similarity:** %.0f%%  **Lines:** %d  **Occurrences:** %d\n\n",
-			m.Hash, m.Score, m.Similarity*100, len(m.Pattern), len(m.Locations)))
+		// Print header with colorized similarity
+		fmt.Printf("\n%s%s  %s  %s  %s  %s  %s\n",
+			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
+			theme.Dim.Render(clusterInfo),
+			theme.Hash.Render(fmt.Sprintf("[%016x]", m.Hash)),
+			theme.Score.Render(fmt.Sprintf("Score %d", m.Score)),
+			renderSimilarity(m.Similarity),
+			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
+			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
 
+		// Build markdown for code blocks only
+		var sb strings.Builder
 		for j, loc := range m.Locations {
 			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
 				j+1, loc.Filename, loc.LineStart))
@@ -324,10 +359,10 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 			}
 			sb.WriteString("```\n\n")
 		}
-		sb.WriteString("---\n\n")
-	}
 
-	renderWithGlow(sb.String())
+		renderWithGlow(sb.String())
+		fmt.Println(theme.Dim.Render("───────────────────────────────────────────────────────────────────────────────"))
+	}
 }
 
 // renderWithGlow pipes markdown content through glow for rendering
@@ -374,7 +409,6 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 	// Track cluster number per hash
 	hashClusterNum := make(map[string]int)
 
-	var sb strings.Builder
 	for i, p := range patterns {
 		// Determine if this hash has multiple clusters
 		clusterInfo := ""
@@ -383,10 +417,18 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 			clusterInfo = fmt.Sprintf(" (Cluster %d/%d)", hashClusterNum[p.Hash], hashCounts[p.Hash])
 		}
 
-		sb.WriteString(fmt.Sprintf("## Pattern %d%s\n\n", i+1, clusterInfo))
-		sb.WriteString(fmt.Sprintf("**Hash:** `%s`  **Score:** %d  **Similarity:** %.0f%%  **Lines:** %d  **Occurrences:** %d\n\n",
-			p.Hash, p.Score, p.Similarity*100, p.Lines, p.Occurrences))
+		// Print header with colorized similarity
+		fmt.Printf("\n%s%s  %s  %s  %s  %s  %s\n",
+			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
+			theme.Dim.Render(clusterInfo),
+			theme.Hash.Render(fmt.Sprintf("[%s]", p.Hash)),
+			theme.Score.Render(fmt.Sprintf("Score %d", p.Score)),
+			renderSimilarity(p.Similarity),
+			theme.Dim.Render(fmt.Sprintf("%d lines", p.Lines)),
+			theme.Dim.Render(fmt.Sprintf("%d occurrences", p.Occurrences)))
 
+		// Build markdown for code blocks only
+		var sb strings.Builder
 		for j, loc := range p.Locations {
 			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
 				j+1, loc.Filename, loc.LineStart))
@@ -399,10 +441,10 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 			}
 			sb.WriteString("```\n\n")
 		}
-		sb.WriteString("---\n\n")
-	}
 
-	renderWithGlow(sb.String())
+		renderWithGlow(sb.String())
+		fmt.Println(theme.Dim.Render("───────────────────────────────────────────────────────────────────────────────"))
+	}
 }
 
 // readSourceLines reads specific lines from a file and normalizes indent

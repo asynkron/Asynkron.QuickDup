@@ -95,17 +95,39 @@ func (s *NormalizedIndentStrategy) Signature(entries []Entry) string {
 
 func (s *NormalizedIndentStrategy) Score(entries []Entry, similarity float64) int {
 	seen := make(map[string]bool)
+	running := 0
+	minRunning := 0
 	for _, e := range entries {
 		entry := e.(*NormalizedIndentEntry)
 		seen[entry.Word] = true
+		running += entry.IndentDelta
+		if running < minRunning {
+			minRunning = running
+		}
 	}
-	uniqueWords := len(seen)
+
+	// Calculate shape imbalance
+	unopenedCloses := -minRunning // closed blocks we didn't open
+	unclosedOpens := running      // opened blocks we didn't close
+	if unclosedOpens < 0 {
+		unclosedOpens = 0
+	}
+	imbalance := unopenedCloses + unclosedOpens
+
+	// Subtract imbalance from unique words (before similarity factor)
+	effectiveWords := len(seen) - imbalance
+	if effectiveWords < 0 {
+		effectiveWords = 0
+	}
+
 	adjustedSim := similarity*2 - 1.0
 	if adjustedSim < 0 {
 		adjustedSim = 0
 	}
-	// Base score from unique words + small bonus for length
-	return int(float64(uniqueWords)*adjustedSim) + len(entries)/20
+	// Cube similarity factor - heavily rewards high similarity
+	// 100%=1.0, 95%=0.73, 90%=0.51, 85%=0.34
+	simFactor := adjustedSim * adjustedSim * adjustedSim
+	return int(float64(effectiveWords)*simFactor) + len(entries)/20
 }
 
 func (s *NormalizedIndentStrategy) BlockedHashes() map[uint64]bool {

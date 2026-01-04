@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/gob"
 	"encoding/json"
 	"flag"
@@ -59,10 +58,52 @@ type PatternMatch struct {
 // Strategy defines how patterns are detected and scored
 type Strategy interface {
 	Name() string
+	Preparse(content string) string
 	ShouldSkip(entry IndentAndWord) bool
 	Hash(entries []IndentAndWord) uint64
 	Signature(entries []IndentAndWord) string
 	Score(entries []IndentAndWord, similarity float64) int
+}
+
+// Preparser transforms file content before parsing
+type Preparser interface {
+	Preparse(content string) string
+}
+
+// CStyleCommentStripper removes /* ... */ multiline comments
+type CStyleCommentStripper struct{}
+
+func (c *CStyleCommentStripper) Preparse(content string) string {
+	result := []byte(content)
+	i := 0
+	for i < len(result) {
+		// Look for /*
+		if i+1 < len(result) && result[i] == '/' && result[i+1] == '*' {
+			// Blank out /*
+			result[i] = ' '
+			result[i+1] = ' '
+			j := i + 2
+			// Find closing */ and blank everything
+			for j < len(result) {
+				if j+1 < len(result) && result[j] == '*' && result[j+1] == '/' {
+					result[j] = ' '
+					result[j+1] = ' '
+					i = j + 2
+					break
+				}
+				if result[j] != '\n' {
+					result[j] = ' '
+				}
+				j++
+			}
+			if j >= len(result) {
+				i = j
+			}
+		} else {
+			i++
+		}
+	}
+	return string(result)
 }
 
 // WordIndentStrategy matches patterns by indent delta and first word
@@ -70,6 +111,12 @@ type WordIndentStrategy struct{}
 
 func (s *WordIndentStrategy) Name() string {
 	return "word-indent"
+}
+
+var cStyleStripper = &CStyleCommentStripper{}
+
+func (s *WordIndentStrategy) Preparse(content string) string {
+	return cStyleStripper.Preparse(content)
 }
 
 func (s *WordIndentStrategy) ShouldSkip(entry IndentAndWord) bool {
@@ -833,20 +880,19 @@ func parseFilesWithCache(files []string, cache *FileCache) (map[string][]IndentA
 }
 
 func parseFile(path string) ([]IndentAndWord, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+
+	content := defaultStrategy.Preparse(string(data))
+	lines := strings.Split(content, "\n")
 
 	var entries []IndentAndWord
-	scanner := bufio.NewScanner(file)
-	lineNumber := 0
 	prevIndent := 0
 
-	for scanner.Scan() {
-		lineNumber++
-		line := scanner.Text()
+	for lineNumber, line := range lines {
+		lineNumber++ // 1-based line numbers
 
 		indent := calculateIndent(line)
 		word := extractFirstWord(line)
@@ -865,10 +911,6 @@ func parseFile(path string) ([]IndentAndWord, error) {
 
 		prevIndent = indent
 		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 
 	return entries, nil

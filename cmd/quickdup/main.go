@@ -59,21 +59,10 @@ type PatternMatch struct {
 // Strategy defines how patterns are detected and scored
 type Strategy interface {
 	Name() string
-	ShouldSkip(line *SourceLine) bool
-	Hash(lines []*SourceLine) uint64
-	Signature(lines []*SourceLine) string
-	Score(lines []*SourceLine, similarity float64) int
-}
-
-// SourceLine holds a parsed line with metadata
-type SourceLine struct {
-	LineNumber  int
-	Line        string
-	Indent      int
-	IndentDelta int
-	Word        string
-	IsBlank     bool
-	IsComment   bool
+	ShouldSkip(entry IndentAndWord) bool
+	Hash(entries []IndentAndWord) uint64
+	Signature(entries []IndentAndWord) string
+	Score(entries []IndentAndWord, similarity float64) int
 }
 
 // WordIndentStrategy matches patterns by indent delta and first word
@@ -83,30 +72,30 @@ func (s *WordIndentStrategy) Name() string {
 	return "word-indent"
 }
 
-func (s *WordIndentStrategy) ShouldSkip(line *SourceLine) bool {
-	return line.IsBlank || line.IsComment
+func (s *WordIndentStrategy) ShouldSkip(entry IndentAndWord) bool {
+	return isWhitespaceOnly(entry.SourceLine) || isCommentOnly(entry.SourceLine)
 }
 
-func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
+func (s *WordIndentStrategy) Hash(entries []IndentAndWord) uint64 {
 	h := fnv.New64a()
-	for _, line := range lines {
-		fmt.Fprintf(h, "%d|%s\n", line.IndentDelta, line.Word)
+	for _, entry := range entries {
+		fmt.Fprintf(h, "%d|%s\n", entry.IndentDelta, entry.Word)
 	}
 	return h.Sum64()
 }
 
-func (s *WordIndentStrategy) Signature(lines []*SourceLine) string {
+func (s *WordIndentStrategy) Signature(entries []IndentAndWord) string {
 	var parts []string
-	for _, line := range lines {
-		parts = append(parts, line.Word)
+	for _, entry := range entries {
+		parts = append(parts, entry.Word)
 	}
 	return strings.Join(parts, " ")
 }
 
-func (s *WordIndentStrategy) Score(lines []*SourceLine, similarity float64) int {
+func (s *WordIndentStrategy) Score(entries []IndentAndWord, similarity float64) int {
 	seen := make(map[string]bool)
-	for _, line := range lines {
-		seen[line.Word] = true
+	for _, entry := range entries {
+		seen[entry.Word] = true
 	}
 	uniqueWords := len(seen)
 	adjustedSim := similarity*2 - 1.0
@@ -891,32 +880,23 @@ func parseFile(path string) ([]IndentAndWord, error) {
 		lineNumber++
 		line := scanner.Text()
 
-		isBlank := isWhitespaceOnly(line)
-		isComment := !isBlank && isCommentOnly(line)
-
-		srcLine := &SourceLine{
-			LineNumber: lineNumber,
-			Line:       line,
-			IsBlank:    isBlank,
-			IsComment:  isComment,
-		}
-
-		if defaultStrategy.ShouldSkip(srcLine) {
-			continue
-		}
-
 		indent := calculateIndent(line)
 		word := extractFirstWord(line)
-
 		indentDelta := indent - prevIndent
-		prevIndent = indent
 
-		entries = append(entries, IndentAndWord{
+		entry := IndentAndWord{
 			LineNumber:  lineNumber,
 			IndentDelta: indentDelta,
 			Word:        word,
 			SourceLine:  line,
-		})
+		}
+
+		if defaultStrategy.ShouldSkip(entry) {
+			continue
+		}
+
+		prevIndent = indent
+		entries = append(entries, entry)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -1268,14 +1248,7 @@ func extendPatternsParallel(survivors map[uint64][]PatternLocation, fileData map
 }
 
 func hashPattern(window []IndentAndWord) uint64 {
-	h := fnv.New64a()
-
-	for _, entry := range window {
-		// Write indent delta as bytes
-		fmt.Fprintf(h, "%d|%s\n", entry.IndentDelta, entry.Word)
-	}
-
-	return h.Sum64()
+	return defaultStrategy.Hash(window)
 }
 
 

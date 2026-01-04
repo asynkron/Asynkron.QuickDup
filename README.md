@@ -31,22 +31,16 @@ Traditional clone detection optimizes for **precision** — minimizing false pos
 
 Extract structural fingerprint per line:
 
-| Field | Description |
-|-------|-------------|
+| Field         | Description                              |
+| ------------- | ---------------------------------------- |
 | `IndentDelta` | Change in indentation from previous line |
-| `Word` | First token on the line |
-| `SourceLine` | Original source for output |
+| `Word`        | First token on the line                  |
+| `SourceLine`  | Original source for output               |
 
 Comments and blank lines are skipped. Comment prefixes are auto-detected by file extension.
 
 Example:
-```go
-func foo() {           // delta=0   word="func"
-    if x {             // delta=+4  word="if"
-        return true    // delta=+4  word="return"
-    }                  // delta=-4  word="}"
-}                      // delta=-4  word="}"
-```
+<img src="assets/images/code-shape-fingerprint.png" width="100%" />
 
 ### Phase 2: Grow-Based Pattern Detection (Parallel)
 
@@ -106,17 +100,17 @@ quickdup -path . -ext .ts -top 20 -min 5
 
 ## Flags
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-path` | `.` | Directory to scan recursively |
-| `-ext` | `.go` | File extension to match |
-| `-min` | `3` | Minimum occurrences to report |
-| `-min-size` | `3` | Base pattern size (lines) to start growing from |
-| `-min-score` | `5` | Minimum score (unique words + similarity bonus) |
-| `-min-similarity` | `0.5` | Minimum token similarity between occurrences (0.0-1.0) |
-| `-top` | `10` | Show top N patterns by score |
-| `-comment` | auto | Override comment prefix (auto-detected by extension) |
-| `-no-cache` | `false` | Disable incremental caching, force full re-parse |
+| Flag                  | Default | Description                                              |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `-path`               | `.`     | Directory to scan recursively                            |
+| `-ext`                | `.go`   | File extension to match                                  |
+| `-min`                | `3`     | Minimum occurrences to report                            |
+| `-min-size`           | `3`     | Base pattern size (lines) to start growing from          |
+| `-min-score`          | `5`     | Minimum score (unique words + similarity bonus)          |
+| `-min-similarity`     | `0.5`   | Minimum token similarity between occurrences (0.0-1.0)   |
+| `-top`                | `10`    | Show top N patterns by score                             |
+| `-comment`            | auto    | Override comment prefix (auto-detected by extension)     |
+| `-no-cache`           | `false` | Disable incremental caching, force full re-parse         |
 | `-github-annotations` | `false` | Output GitHub Actions annotations for inline PR comments |
 
 ## GitHub Actions Integration

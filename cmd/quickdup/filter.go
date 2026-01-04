@@ -90,7 +90,9 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 				continue
 			}
 
-			score := activeStrategy.Score(c.pattern, cluster.Similarity)
+			baseScore := activeStrategy.Score(c.pattern, cluster.Similarity)
+			// Multiply by occurrences - more duplicates = higher priority to refactor
+			score := baseScore * len(cluster.Locations)
 			if score < config.MinScore {
 				stats.SkippedLowScore++
 				continue

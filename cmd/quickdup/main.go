@@ -53,6 +53,66 @@ type PatternMatch struct {
 	Score       int             // combined score: uniqueWords + similarity bonus
 }
 
+// Strategy defines how patterns are detected and scored
+type Strategy interface {
+	Name() string
+	ShouldSkip(line *SourceLine) bool
+	Hash(lines []*SourceLine) uint64
+	Signature(lines []*SourceLine) string
+	Score(lines []*SourceLine, similarity float64) int
+}
+
+// SourceLine holds a parsed line with metadata
+type SourceLine struct {
+	LineNumber  int
+	Line        string
+	Indent      int
+	IndentDelta int
+	Word        string
+	IsBlank     bool
+	IsComment   bool
+}
+
+// WordIndentStrategy matches patterns by indent delta and first word
+type WordIndentStrategy struct{}
+
+func (s *WordIndentStrategy) Name() string {
+	return "word-indent"
+}
+
+func (s *WordIndentStrategy) ShouldSkip(line *SourceLine) bool {
+	return line.IsBlank || line.IsComment
+}
+
+func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
+	h := fnv.New64a()
+	for _, line := range lines {
+		fmt.Fprintf(h, "%d|%s\n", line.IndentDelta, line.Word)
+	}
+	return h.Sum64()
+}
+
+func (s *WordIndentStrategy) Signature(lines []*SourceLine) string {
+	var parts []string
+	for _, line := range lines {
+		parts = append(parts, line.Word)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (s *WordIndentStrategy) Score(lines []*SourceLine, similarity float64) int {
+	seen := make(map[string]bool)
+	for _, line := range lines {
+		seen[line.Word] = true
+	}
+	uniqueWords := len(seen)
+	adjustedSim := similarity*2 - 1.0
+	if adjustedSim < 0 {
+		adjustedSim = 0
+	}
+	return int(float64(uniqueWords) * adjustedSim)
+}
+
 // JSON output structures
 type JSONLocation struct {
 	Filename  string `json:"filename"`

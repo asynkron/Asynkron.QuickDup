@@ -104,7 +104,8 @@ func (s *NormalizedIndentStrategy) Score(entries []Entry, similarity float64) in
 	if adjustedSim < 0 {
 		adjustedSim = 0
 	}
-	return int(float64(uniqueWords) * adjustedSim)
+	// Base score from unique words + small bonus for length
+	return int(float64(uniqueWords)*adjustedSim) + len(entries)/20
 }
 
 func (s *NormalizedIndentStrategy) BlockedHashes() map[uint64]bool {

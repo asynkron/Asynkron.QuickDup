@@ -291,11 +291,27 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 		lang = strings.TrimPrefix(ext, ".")
 	}
 
+	// Group matches by hash to detect multiple clusters
+	hashCounts := make(map[uint64]int)
+	for _, m := range matches {
+		hashCounts[m.Hash]++
+	}
+
+	// Track cluster number per hash
+	hashClusterNum := make(map[uint64]int)
+
 	var sb strings.Builder
 	for i, m := range matches {
-		sb.WriteString(fmt.Sprintf("## Pattern %d\n\n", i+1))
-		sb.WriteString(fmt.Sprintf("**Hash:** `%016x`  **Score:** %d  **Similarity:** %.0f%%  **Lines:** %d\n\n",
-			m.Hash, m.Score, m.Similarity*100, len(m.Pattern)))
+		// Determine if this hash has multiple clusters
+		clusterInfo := ""
+		if hashCounts[m.Hash] > 1 {
+			hashClusterNum[m.Hash]++
+			clusterInfo = fmt.Sprintf(" (Cluster %d/%d)", hashClusterNum[m.Hash], hashCounts[m.Hash])
+		}
+
+		sb.WriteString(fmt.Sprintf("## Pattern %d%s\n\n", i+1, clusterInfo))
+		sb.WriteString(fmt.Sprintf("**Hash:** `%016x`  **Score:** %d  **Similarity:** %.0f%%  **Lines:** %d  **Occurrences:** %d\n\n",
+			m.Hash, m.Score, m.Similarity*100, len(m.Pattern), len(m.Locations)))
 
 		for j, loc := range m.Locations {
 			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",

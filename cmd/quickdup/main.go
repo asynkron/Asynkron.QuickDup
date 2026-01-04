@@ -221,7 +221,20 @@ func main() {
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
+	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
 	flag.Parse()
+
+	// Handle compare mode
+	if *compare != "" {
+		parts := strings.Split(*compare, "..")
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: --compare requires format 'base..head'\n")
+			os.Exit(1)
+		}
+		baseRef, headRef := parts[0], parts[1]
+		runCompare(baseRef, headRef, *ext, *exclude, *minOccur, *minScore, *minSize, *minSimilarity)
+		return
+	}
 
 	// Parse exclude patterns
 	var excludePatterns []string
@@ -1283,4 +1296,185 @@ func computeAverageTokenSimilarity(locations []PatternLocation) float64 {
 		return 1.0
 	}
 	return totalSim / float64(pairs)
+}
+
+// runCompare compares duplicate patterns between two git commits
+func runCompare(baseRef, headRef, ext, exclude string, minOccur, minScore, minSize int, minSimilarity float64) {
+	fmt.Printf("Comparing duplicates: %s -> %s\n\n", baseRef, headRef)
+
+	// Create temporary worktrees
+	baseDir, err := os.MkdirTemp("", "quickdup-base-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(baseDir)
+
+	headDir, err := os.MkdirTemp("", "quickdup-head-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating temp dir: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(headDir)
+
+	// Create worktrees
+	fmt.Printf("Creating worktree for %s...\n", baseRef)
+	cmd := exec.Command("git", "worktree", "add", "--detach", baseDir, baseRef)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating base worktree: %v\n%s\n", err, output)
+		os.Exit(1)
+	}
+	defer exec.Command("git", "worktree", "remove", "--force", baseDir).Run()
+
+	fmt.Printf("Creating worktree for %s...\n", headRef)
+	cmd = exec.Command("git", "worktree", "add", "--detach", headDir, headRef)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating head worktree: %v\n%s\n", err, output)
+		os.Exit(1)
+	}
+	defer exec.Command("git", "worktree", "remove", "--force", headDir).Run()
+
+	// Build args for quickdup
+	args := []string{
+		"-ext", ext,
+		"-min", fmt.Sprintf("%d", minOccur),
+		"-min-score", fmt.Sprintf("%d", minScore),
+		"-min-size", fmt.Sprintf("%d", minSize),
+		"-min-similarity", fmt.Sprintf("%f", minSimilarity),
+		"--no-cache",
+	}
+	if exclude != "" {
+		args = append(args, "-exclude", exclude)
+	}
+
+	// Run quickdup on base
+	fmt.Printf("\nScanning %s...\n", baseRef)
+	baseArgs := append([]string{"-path", baseDir}, args...)
+	cmd = exec.Command(os.Args[0], baseArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: quickdup on base returned error: %v\n", err)
+	}
+
+	// Run quickdup on head
+	fmt.Printf("\nScanning %s...\n", headRef)
+	headArgs := append([]string{"-path", headDir}, args...)
+	cmd = exec.Command(os.Args[0], headArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: quickdup on head returned error: %v\n", err)
+	}
+
+	// Load results from both
+	baseResults := loadJSONResults(filepath.Join(baseDir, ".quickdup", "results.json"))
+	headResults := loadJSONResults(filepath.Join(headDir, ".quickdup", "results.json"))
+
+	// Build hash -> occurrences maps
+	baseOccur := make(map[string]int)
+	for _, p := range baseResults.Patterns {
+		baseOccur[p.Hash] = p.Occurrences
+	}
+
+	headOccur := make(map[string]int)
+	headPatterns := make(map[string]JSONPattern)
+	for _, p := range headResults.Patterns {
+		headOccur[p.Hash] = p.Occurrences
+		headPatterns[p.Hash] = p
+	}
+
+	// Find lingering duplicates (reduced but not eliminated)
+	fmt.Printf("\n%s\n", strings.Repeat("=", 60))
+	fmt.Printf("COMPARISON RESULTS: %s -> %s\n", baseRef, headRef)
+	fmt.Printf("%s\n\n", strings.Repeat("=", 60))
+
+	type lingering struct {
+		hash      string
+		baseCount int
+		headCount int
+		removed   int
+		pattern   JSONPattern
+	}
+	var lingeringPatterns []lingering
+
+	for hash, baseCount := range baseOccur {
+		headCount := headOccur[hash]
+		if headCount > 0 && headCount < baseCount {
+			lingeringPatterns = append(lingeringPatterns, lingering{
+				hash:      hash,
+				baseCount: baseCount,
+				headCount: headCount,
+				removed:   baseCount - headCount,
+				pattern:   headPatterns[hash],
+			})
+		}
+	}
+
+	// Sort by removed count descending
+	sort.Slice(lingeringPatterns, func(i, j int) bool {
+		return lingeringPatterns[i].removed > lingeringPatterns[j].removed
+	})
+
+	if len(lingeringPatterns) == 0 {
+		fmt.Printf("No lingering duplicates found. All refactoring appears complete!\n")
+	} else {
+		fmt.Printf("Found %d patterns with incomplete refactoring:\n\n", len(lingeringPatterns))
+		for _, l := range lingeringPatterns {
+			fmt.Printf("%s %s removed, %s lingering - potentially missed refactoring?\n",
+				hashStyle.Render(fmt.Sprintf("[%s]", l.hash)),
+				summaryStyle.Render(fmt.Sprintf("%d", l.removed)),
+				scoreStyle.Render(fmt.Sprintf("%d", l.headCount)))
+			if len(l.pattern.Pattern) > 0 {
+				fmt.Printf("  Pattern preview: %s\n", dimStyle.Render(truncate(l.pattern.Pattern[0], 60)))
+			}
+			fmt.Printf("  Remaining locations:\n")
+			for _, loc := range l.pattern.Locations {
+				// Make path relative by stripping worktree prefix
+				relPath := strings.TrimPrefix(loc.Filename, headDir+"/")
+				fmt.Printf("    %s\n", locationStyle.Render(fmt.Sprintf("%s:%d", relPath, loc.LineStart)))
+			}
+			fmt.Println()
+		}
+	}
+
+	// Also report completely removed patterns
+	var fullyRemoved int
+	for hash, baseCount := range baseOccur {
+		if headOccur[hash] == 0 {
+			fullyRemoved++
+			_ = baseCount // unused but shows intent
+		}
+	}
+	if fullyRemoved > 0 {
+		fmt.Printf("\n%s duplicate patterns were completely removed.\n", summaryStyle.Render(fmt.Sprintf("%d", fullyRemoved)))
+	}
+
+	// Report new patterns
+	var newPatterns int
+	for hash := range headOccur {
+		if baseOccur[hash] == 0 {
+			newPatterns++
+		}
+	}
+	if newPatterns > 0 {
+		fmt.Printf("%s new duplicate patterns were introduced.\n", scoreStyle.Render(fmt.Sprintf("%d", newPatterns)))
+	}
+}
+
+func loadJSONResults(path string) JSONOutput {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return JSONOutput{}
+	}
+	var output JSONOutput
+	json.Unmarshal(data, &output)
+	return output
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }

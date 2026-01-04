@@ -30,6 +30,34 @@ var (
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 )
 
+// SourceLine represents a raw line from the source file with metadata
+type SourceLine struct {
+	LineNumber int
+	Line       string
+	Indent     int
+	IsBlank    bool
+	IsComment  bool
+}
+
+// Strategy defines how to detect duplicate patterns
+type Strategy interface {
+	// Name returns the strategy identifier
+	Name() string
+
+	// ShouldSkip returns true if this line should be excluded from pattern matching
+	ShouldSkip(line *SourceLine) bool
+
+	// Hash computes a hash for a window of source lines
+	Hash(lines []*SourceLine) uint64
+
+	// Signature returns a string representation for display/comparison
+	Signature(lines []*SourceLine) string
+
+	// Score returns a quality score for a pattern (higher = more significant)
+	Score(lines []*SourceLine, similarity float64) int
+}
+
+// IndentAndWord is the legacy entry type (used by default strategy)
 type IndentAndWord struct {
 	LineNumber  int
 	IndentDelta int
@@ -79,6 +107,99 @@ type JSONOutput struct {
 type IgnoreFile struct {
 	Description string   `json:"description"`
 	Ignored     []string `json:"ignored"`
+}
+
+// WordIndentStrategy is the default strategy that uses first word + indent delta
+type WordIndentStrategy struct{}
+
+func (s *WordIndentStrategy) Name() string {
+	return "word-indent"
+}
+
+func (s *WordIndentStrategy) ShouldSkip(line *SourceLine) bool {
+	return line.IsBlank || line.IsComment
+}
+
+func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
+	h := fnv.New64a()
+	prevIndent := 0
+	for _, line := range lines {
+		indentDelta := line.Indent - prevIndent
+		prevIndent = line.Indent
+		word := extractFirstWord(line.Line)
+		h.Write([]byte(fmt.Sprintf("%d:%s\n", indentDelta, word)))
+	}
+	return h.Sum64()
+}
+
+func (s *WordIndentStrategy) Signature(lines []*SourceLine) string {
+	var parts []string
+	for _, line := range lines {
+		parts = append(parts, extractFirstWord(line.Line))
+	}
+	return strings.Join(parts, " ")
+}
+
+func (s *WordIndentStrategy) Score(lines []*SourceLine, similarity float64) int {
+	// Count unique words
+	seen := make(map[string]bool)
+	for _, line := range lines {
+		word := extractFirstWord(line.Line)
+		if word != "" && word != "{" && word != "}" && word != "(" && word != ")" {
+			seen[word] = true
+		}
+	}
+	uniqueWords := len(seen)
+
+	// Adjusted similarity: 50%→0, 100%→1
+	adjustedSim := similarity*2 - 1.0
+	if adjustedSim < 0 {
+		adjustedSim = 0
+	}
+	return int(float64(uniqueWords) * adjustedSim)
+}
+
+// FullLineStrategy matches based on complete line content (ignoring leading whitespace)
+type FullLineStrategy struct{}
+
+func (s *FullLineStrategy) Name() string {
+	return "full-line"
+}
+
+func (s *FullLineStrategy) ShouldSkip(line *SourceLine) bool {
+	return line.IsBlank || line.IsComment
+}
+
+func (s *FullLineStrategy) Hash(lines []*SourceLine) uint64 {
+	h := fnv.New64a()
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line.Line, " \t")
+		h.Write([]byte(trimmed))
+		h.Write([]byte{'\n'})
+	}
+	return h.Sum64()
+}
+
+func (s *FullLineStrategy) Signature(lines []*SourceLine) string {
+	if len(lines) > 0 {
+		return strings.TrimSpace(lines[0].Line)
+	}
+	return ""
+}
+
+func (s *FullLineStrategy) Score(lines []*SourceLine, similarity float64) int {
+	// Score based on total content length
+	totalLen := 0
+	for _, line := range lines {
+		totalLen += len(strings.TrimSpace(line.Line))
+	}
+	return totalLen / 10 // Rough score
+}
+
+// Available strategies
+var strategies = map[string]Strategy{
+	"word-indent": &WordIndentStrategy{},
+	"full-line":   &FullLineStrategy{},
 }
 
 // CachedFile stores parsed entries with mod time for incremental parsing
@@ -857,6 +978,47 @@ func parseFile(path string) ([]IndentAndWord, error) {
 	}
 
 	return entries, nil
+}
+
+// parseFileRaw parses a file keeping ALL lines including blanks and comments
+func parseFileRaw(path string) ([]*SourceLine, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []*SourceLine
+	scanner := bufio.NewScanner(file)
+	lineNumber := 0
+
+	for scanner.Scan() {
+		lineNumber++
+		line := scanner.Text()
+
+		isBlank := isWhitespaceOnly(line)
+		isComment := !isBlank && isCommentOnly(line)
+
+		// For blank/comment lines: indent=0 (strategy can handle differently)
+		indent := 0
+		if !isBlank && !isComment {
+			indent = calculateIndent(line)
+		}
+
+		lines = append(lines, &SourceLine{
+			LineNumber: lineNumber,
+			Line:       line,
+			Indent:     indent,
+			IsBlank:    isBlank,
+			IsComment:  isComment,
+		})
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 }
 
 func isWhitespaceOnly(line string) bool {

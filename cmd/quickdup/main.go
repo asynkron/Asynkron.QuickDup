@@ -32,11 +32,13 @@ var (
 
 // SourceLine represents a raw line from the source file with metadata
 type SourceLine struct {
-	LineNumber int
-	Line       string
-	Indent     int
-	IsBlank    bool
-	IsComment  bool
+	LineNumber  int
+	Line        string
+	Indent      int
+	IndentDelta int // delta from previous non-blank/non-comment line
+	Word        string
+	IsBlank     bool
+	IsComment   bool
 }
 
 // Strategy defines how to detect duplicate patterns
@@ -122,12 +124,9 @@ func (s *WordIndentStrategy) ShouldSkip(line *SourceLine) bool {
 
 func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
 	h := fnv.New64a()
-	prevIndent := 0
 	for _, line := range lines {
-		indentDelta := line.Indent - prevIndent
-		prevIndent = line.Indent
-		word := extractFirstWord(line.Line)
-		h.Write([]byte(fmt.Sprintf("%d:%s\n", indentDelta, word)))
+		// Use pre-computed IndentDelta and Word (matches original parseFile behavior)
+		h.Write([]byte(fmt.Sprintf("%d:%s\n", line.IndentDelta, line.Word)))
 	}
 	return h.Sum64()
 }
@@ -135,7 +134,7 @@ func (s *WordIndentStrategy) Hash(lines []*SourceLine) uint64 {
 func (s *WordIndentStrategy) Signature(lines []*SourceLine) string {
 	var parts []string
 	for _, line := range lines {
-		parts = append(parts, extractFirstWord(line.Line))
+		parts = append(parts, line.Word)
 	}
 	return strings.Join(parts, " ")
 }
@@ -144,7 +143,7 @@ func (s *WordIndentStrategy) Score(lines []*SourceLine, similarity float64) int 
 	// Count unique words
 	seen := make(map[string]bool)
 	for _, line := range lines {
-		word := extractFirstWord(line.Line)
+		word := line.Word
 		if word != "" && word != "{" && word != "}" && word != "(" && word != ")" {
 			seen[word] = true
 		}
@@ -450,6 +449,12 @@ func main() {
 	if totalFiles == 0 {
 		fmt.Printf("No %s files found in %s\n", extension, folder)
 		os.Exit(0)
+	}
+
+	// Use strategy-based detection if a strategy is specified
+	if activeStrategy != nil {
+		runWithStrategy(activeStrategy, files, folder, *minOccur, *minSize, *minScore, *minSimilarity, *topN, *githubAnnotations, *githubLevel, gitDiff, changedFiles)
+		return
 	}
 
 	// Phase 1: Parse all files in parallel (with caching)
@@ -1004,6 +1009,7 @@ func parseFileRaw(path string) ([]*SourceLine, error) {
 	var lines []*SourceLine
 	scanner := bufio.NewScanner(file)
 	lineNumber := 0
+	prevIndent := 0
 
 	for scanner.Scan() {
 		lineNumber++
@@ -1012,18 +1018,25 @@ func parseFileRaw(path string) ([]*SourceLine, error) {
 		isBlank := isWhitespaceOnly(line)
 		isComment := !isBlank && isCommentOnly(line)
 
-		// For blank/comment lines: indent=0 (strategy can handle differently)
+		// For blank/comment lines: indent=0, word=""
 		indent := 0
+		indentDelta := 0
+		word := ""
 		if !isBlank && !isComment {
 			indent = calculateIndent(line)
+			indentDelta = indent - prevIndent
+			prevIndent = indent
+			word = extractFirstWord(line)
 		}
 
 		lines = append(lines, &SourceLine{
-			LineNumber: lineNumber,
-			Line:       line,
-			Indent:     indent,
-			IsBlank:    isBlank,
-			IsComment:  isComment,
+			LineNumber:  lineNumber,
+			Line:        line,
+			Indent:      indent,
+			IndentDelta: indentDelta,
+			Word:        word,
+			IsBlank:     isBlank,
+			IsComment:   isComment,
 		})
 	}
 
@@ -1867,4 +1880,155 @@ func detectWithStrategy(fileData map[string][]*SourceLine, strategy Strategy, mi
 
 	fmt.Printf("Strategy growth stopped at %d lines\n", currentLen-1)
 	return allPatterns
+}
+
+// runWithStrategy runs the full detection and output using a Strategy
+func runWithStrategy(strategy Strategy, files []string, folder string, minOccur, minSize, minScore int, minSimilarity float64, topN int, githubAnnotations bool, githubLevel string, gitDiff *string, changedFiles map[string]bool) {
+	startTime := time.Now()
+
+	fmt.Printf("Scanning %d files using %d workers...\n", len(files), runtime.NumCPU())
+
+	// Parse all files raw
+	parseStart := time.Now()
+	fileData := parseFilesRaw(files, nil)
+	parseTime := time.Since(parseStart)
+
+	// Count total lines
+	totalLines := 0
+	for _, lines := range fileData {
+		totalLines += len(lines)
+	}
+	fmt.Printf("Parsed %d files in %s (%d total lines)\n", len(fileData), parseTime.Round(time.Millisecond), totalLines)
+
+	// Detect patterns
+	detectStart := time.Now()
+	fmt.Printf("Detecting patterns with strategy '%s'...\n", strategy.Name())
+	patterns := detectWithStrategy(fileData, strategy, minOccur, minSize)
+	detectTime := time.Since(detectStart)
+	fmt.Printf("Pattern detection took %s\n", detectTime.Round(time.Millisecond))
+
+	// Convert to matches with scoring
+	var matches []StrategyMatch
+	for hash, locs := range patterns {
+		if len(locs) < minOccur {
+			continue
+		}
+
+		// Compute similarity (simplified - compare first vs others)
+		similarity := computeStrategySimilarity(locs)
+		if similarity < minSimilarity {
+			continue
+		}
+
+		score := strategy.Score(locs[0].Lines, similarity)
+		if score < minScore {
+			continue
+		}
+
+		matches = append(matches, StrategyMatch{
+			Hash:       hash,
+			Locations:  locs,
+			Lines:      locs[0].Lines,
+			Score:      score,
+			Similarity: similarity,
+		})
+	}
+
+	// Sort by score descending
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Score > matches[j].Score
+	})
+
+	// Limit to top N
+	top := topN
+	if len(matches) < top {
+		top = len(matches)
+	}
+
+	// GitHub annotations
+	if githubAnnotations && top > 0 {
+		for _, m := range matches[:top] {
+			loc := m.Locations[0]
+			// Skip if git-diff specified and file not changed
+			if *gitDiff != "" && !changedFiles[loc.Filename] {
+				continue
+			}
+			otherLocs := make([]string, 0, len(m.Locations)-1)
+			for _, other := range m.Locations[1:] {
+				otherLocs = append(otherLocs, fmt.Sprintf("%s:%d", filepath.Base(other.Filename), other.LineStart))
+			}
+			endLine := loc.LineStart + len(m.Lines) - 1
+			msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
+			fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
+				githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Lines), m.Similarity*100, m.Score, msg)
+		}
+		fmt.Println()
+	}
+
+	// Output results
+	fmt.Printf("\nFound %s patterns with %d+ occurrences (showing top %d by score)\n\n",
+		summaryStyle.Render(fmt.Sprintf("%d", len(matches))), minOccur, top)
+
+	for _, m := range matches[:top] {
+		fmt.Printf("\n%s %s %s %s %s:\n",
+			scoreStyle.Render(fmt.Sprintf("Score %d", m.Score)),
+			dimStyle.Render(fmt.Sprintf("[%d lines]", len(m.Lines))),
+			dimStyle.Render(fmt.Sprintf("%.0f%% similar", m.Similarity*100)),
+			dimStyle.Render(fmt.Sprintf("found %d times", len(m.Locations))),
+			hashStyle.Render(fmt.Sprintf("[%x]", m.Hash)))
+
+		for _, loc := range m.Locations {
+			fmt.Printf("  %s\n", locationStyle.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
+		}
+	}
+
+	// Summary
+	fmt.Printf("\nTotal: %d duplicate patterns in %d files (%d lines) in %s\n",
+		len(matches), len(fileData), totalLines, time.Since(startTime).Round(time.Millisecond))
+}
+
+// computeStrategySimilarity computes average similarity between pattern occurrences
+func computeStrategySimilarity(locs []StrategyLocation) float64 {
+	if len(locs) < 2 {
+		return 1.0
+	}
+
+	// Compare line content between occurrences
+	var totalSim float64
+	pairs := 0
+
+	for i := 0; i < len(locs); i++ {
+		for j := i + 1; j < len(locs); j++ {
+			sim := compareLines(locs[i].Lines, locs[j].Lines)
+			totalSim += sim
+			pairs++
+		}
+	}
+
+	if pairs == 0 {
+		return 1.0
+	}
+	return totalSim / float64(pairs)
+}
+
+// compareLines compares two line sequences for similarity
+func compareLines(a, b []*SourceLine) float64 {
+	if len(a) != len(b) {
+		return 0.0
+	}
+	if len(a) == 0 {
+		return 1.0
+	}
+
+	matches := 0
+	for i := range a {
+		// Compare trimmed lines
+		lineA := strings.TrimSpace(a[i].Line)
+		lineB := strings.TrimSpace(b[i].Line)
+		if lineA == lineB {
+			matches++
+		}
+	}
+
+	return float64(matches) / float64(len(a))
 }

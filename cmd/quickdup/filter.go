@@ -52,12 +52,12 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 		}
 	}
 
-	// Second pass: parallel token similarity check
-	type similarityResult struct {
-		index      int
-		similarity float64
+	// Second pass: parallel clustering by similarity
+	type clusterResult struct {
+		index    int
+		clusters []ClusterResult
 	}
-	results := make([]similarityResult, len(candidates))
+	results := make([]clusterResult, len(candidates))
 	numWorkers := runtime.NumCPU()
 
 	var wg sync.WaitGroup
@@ -72,33 +72,38 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 		go func() {
 			defer wg.Done()
 			for idx := range work {
-				sim := computeAverageTokenSimilarity(candidates[idx].locs)
-				results[idx] = similarityResult{idx, sim}
+				clusters := clusterBySimilarity(candidates[idx].locs, config.MinSimilarity)
+				results[idx] = clusterResult{idx, clusters}
 			}
 		}()
 	}
 	wg.Wait()
 
-	// Third pass: collect matches that pass similarity and score thresholds
+	// Third pass: collect matches from clusters that pass thresholds
 	var matches []PatternMatch
 	for _, r := range results {
-		if r.similarity < config.MinSimilarity {
-			stats.SkippedLowSimilarity++
-			continue
-		}
 		c := candidates[r.index]
-		score := activeStrategy.Score(c.pattern, r.similarity)
-		if score < config.MinScore {
-			stats.SkippedLowScore++
-			continue
+		for _, cluster := range r.clusters {
+			// Skip clusters that don't meet minimum occurrence threshold
+			if len(cluster.Locations) < config.MinOccur {
+				stats.SkippedLowSimilarity++
+				continue
+			}
+
+			score := activeStrategy.Score(c.pattern, cluster.Similarity)
+			if score < config.MinScore {
+				stats.SkippedLowScore++
+				continue
+			}
+
+			matches = append(matches, PatternMatch{
+				Hash:       c.hash,
+				Locations:  cluster.Locations,
+				Pattern:    cluster.Locations[0].Pattern,
+				Similarity: cluster.Similarity,
+				Score:      score,
+			})
 		}
-		matches = append(matches, PatternMatch{
-			Hash:       c.hash,
-			Locations:  c.locs,
-			Pattern:    c.pattern,
-			Similarity: r.similarity,
-			Score:      score,
-		})
 	}
 
 	// Sort by score descending

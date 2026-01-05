@@ -100,7 +100,7 @@ func main() {
 	minOccur := flag.Int("min", 2, "Minimum occurrences to report")
 	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords × adjusted similarity)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
-	minSimilarity := flag.Float64("min-similarity", 0.5, "Minimum token similarity between occurrences (0.0-1.0)")
+	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")

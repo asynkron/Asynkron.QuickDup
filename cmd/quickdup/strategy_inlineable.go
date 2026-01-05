@@ -72,8 +72,9 @@ func (s *InlineableStrategy) Signature(entries []Entry) string {
 }
 
 func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
-	if len(entries) < 3 || len(entries) > 6 {
-		return 0 // Too short or too long for inlineable pattern
+	// Only match short patterns: 3-5 lines
+	if len(entries) < 3 || len(entries) > 5 {
+		return 0
 	}
 
 	// Extract words
@@ -83,28 +84,26 @@ func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
 		words[i] = entry.Word
 	}
 
-	// Check for inlineable pattern:
-	// - Starts with access modifier (public/private/internal/protected)
-	// - Contains { and }
-	// - Contains return
-	hasModifier := accessModifiers[words[0]]
-	hasOpenBrace := false
-	hasCloseBrace := false
-	hasReturn := false
+	// Check for exact inlineable pattern:
+	// Pattern A (4 lines): modifier { return }
+	// Pattern B (3 lines): modifier return } (brace on same line)
+	// May have 1 extra line at end (closing brace of class)
+	matched := false
 
-	for _, w := range words {
-		switch w {
-		case "{":
-			hasOpenBrace = true
-		case "}":
-			hasCloseBrace = true
-		case "return":
-			hasReturn = true
+	if len(words) >= 4 {
+		// Check for: modifier { return }
+		if accessModifiers[words[0]] && words[1] == "{" && words[2] == "return" && words[3] == "}" {
+			matched = true
+		}
+	}
+	if !matched && len(words) >= 3 {
+		// Check for: modifier return }
+		if accessModifiers[words[0]] && words[1] == "return" && words[2] == "}" {
+			matched = true
 		}
 	}
 
-	// Must match inlineable shape
-	if !hasModifier || !hasOpenBrace || !hasCloseBrace || !hasReturn {
+	if !matched {
 		return 0
 	}
 

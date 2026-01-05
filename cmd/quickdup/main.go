@@ -109,7 +109,7 @@ func main() {
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent")
+	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable")
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
 	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
 	flag.Parse()
@@ -119,6 +119,7 @@ func main() {
 		"word-indent":       &WordIndentStrategy{},
 		"normalized-indent": &NormalizedIndentStrategy{},
 		"word-only":         &WordOnlyStrategy{},
+		"inlineable":        &InlineableStrategy{},
 	}
 	if s, ok := strategies[*strategyName]; ok {
 		activeStrategy = s

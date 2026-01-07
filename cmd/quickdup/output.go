@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	_ "embed"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -376,16 +377,29 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 }
 
 // renderWithGlow pipes markdown content through glow for rendering
+//go:embed assets/glow/onedark.json
+var glowOneDark []byte
+
 func renderWithGlow(markdown string) {
-	cmd := exec.Command("glow", "-w", "0", "-")
+	// Write embedded style to a temp file for glow
+	tmp, err := os.CreateTemp("", "glow-onedark-*.json")
+	if err == nil {
+		_, _ = tmp.Write(glowOneDark)
+		_ = tmp.Close()
+	}
+	args := []string{"-w", "0"}
+	if err == nil { args = append(args, "-s", tmp.Name()) }
+	args = append(args, "-")
+	cmd := exec.Command("glow", args...)
 	cmd.Stdin = strings.NewReader(markdown)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
+	if runErr := cmd.Run(); runErr != nil {
 		// Fallback to plain output if glow is not available
 		fmt.Print(markdown)
 	}
+	if err == nil { _ = os.Remove(tmp.Name()) }
 }
 
 // ReadJSONResults reads results from a JSON file

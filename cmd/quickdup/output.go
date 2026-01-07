@@ -220,6 +220,13 @@ func PrintTotalSummary(matchCount, fileCount, totalLines int, elapsed time.Durat
 	fmt.Printf("\n%s\n", theme.Dim.Render("Tip: Even partial matches may contain extractable sub-sections. Look for common logic that could be refactored into shared helpers, base classes, modules or using generics functuins / types where supported."))
 }
 
+// PrintShowingPatterns prints the footer showing selected patterns range
+func PrintShowingPatterns(skip, limit int) {
+	fmt.Printf("Showing pattern %s to %s\n",
+		theme.Summary.Render(fmt.Sprintf("%d", skip)),
+		theme.Summary.Render(fmt.Sprintf("%d", limit)))
+}
+
 // langFromExt maps file extensions to markdown code block language hints
 var langFromExt = map[string]string{
 	".go":    "go",
@@ -359,7 +366,7 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 
 		// Render each occurrence with styled header + code block
 		for j, loc := range m.Locations {
-			fmt.Printf("  %s %s\n",
+			fmt.Printf("\n  %s %s\n",
 				theme.LineNum.Render(fmt.Sprintf("Occurrence %d", j+1)),
 				theme.Location.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
 
@@ -396,8 +403,8 @@ const glowOneDarkJSON = `{
 
 const glamOneDark = `{
   "document": {
-    "block_prefix": "\n",
-    "block_suffix": "\n",
+    "block_prefix": "",
+    "block_suffix": "",
     "color": "#ABB2BF",
     "margin": 2
   },
@@ -539,7 +546,7 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 
 		// Render each occurrence with styled header + code block
 		for j, loc := range p.Locations {
-			fmt.Printf("  %s %s\n",
+			fmt.Printf("\n  %s %s\n",
 				theme.LineNum.Render(fmt.Sprintf("Occurrence %d", j+1)),
 				theme.Location.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
 
@@ -663,7 +670,10 @@ func WriteJSONResults(matches []PatternMatch, outputPath string) error {
 	if err := os.WriteFile(outputPath, jsonData, 0o644); err != nil {
 		return fmt.Errorf("writing JSON file: %w", err)
 	}
-
-	fmt.Printf("Results written to: %s\n", theme.Location.Render(outputPath))
 	return nil
+}
+
+// PrintResultsPath prints the path to the results file
+func PrintResultsPath(outputPath string) {
+	fmt.Printf("Results written to: %s\n", theme.Location.Render(outputPath))
 }

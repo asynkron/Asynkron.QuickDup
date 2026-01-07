@@ -99,42 +99,64 @@ go install github.com/asynkron/Asynkron.QuickDup/cmd/quickdup@latest
 quickdup -path . -ext .go
 
 # Scan C# files with stricter similarity threshold
-quickdup -path ./src -ext .cs -min-similarity 0.7
+quickdup -path ./src -ext .cs -min-similarity 0.9
 
 # Show top 20 patterns, require 5+ occurrences
 quickdup -path . -ext .ts -top 20 -min 5
 
-# Scan a single file (or pass a file path to -path)
-quickdup --file ./src/main.go
+# Show detailed code for patterns 0-5
+quickdup -path . -ext .go -select 0..5
 
-# Verbose progress for long-running phases
-quickdup --file ./src/main.go --debug
+# Exclude generated files
+quickdup -path . -ext .go -exclude "*.pb.go,*_gen.go"
 
-# Hard timeout (seconds)
-quickdup --file ./src/main.go --timeout 20
+# Use a different detection strategy
+quickdup -path . -ext .go -strategy word-only
+
+# Compare duplicates between commits
+quickdup -path . -ext .go -compare origin/main..HEAD
 
 # Cap pattern growth at 50 lines
-quickdup -path . -ext .go --max-size 50
+quickdup -path . -ext .go -max-size 50
+
+# Verbose progress for long-running phases
+quickdup -path . -ext .go -debug
 ```
 
 ## Flags
 
-| Flag                  | Default | Description                                              |
-| --------------------- | ------- | -------------------------------------------------------- |
-| `-path`               | `.`     | Directory to scan recursively                            |
-| `-file`               |         | Scan a single file (overrides `-path`)                   |
-| `-ext`                | `.go`   | File extension to match                                  |
-| `-min`                | `3`     | Minimum occurrences to report                            |
-| `-min-size`           | `3`     | Base pattern size (lines) to start growing from          |
-| `-max-size`           | `0`     | Maximum pattern size to grow to (0 = no limit)           |
-| `-min-score`          | `5`     | Minimum score (unique words + similarity bonus)          |
-| `-min-similarity`     | `0.5`   | Minimum token similarity between occurrences (0.0-1.0)   |
-| `-top`                | `10`    | Show top N patterns by score                             |
-| `-comment`            | auto    | Override comment prefix (auto-detected by extension)     |
-| `-no-cache`           | `false` | Disable incremental caching, force full re-parse         |
-| `-github-annotations` | `false` | Output GitHub Actions annotations for inline PR comments |
-| `-debug`              | `false` | Print verbose progress for long-running phases           |
-| `-timeout`            | `20`    | Hard timeout in seconds (0 disables)                     |
+| Flag                  | Default             | Description                                                      |
+| --------------------- | ------------------- | ---------------------------------------------------------------- |
+| `-path`               | `.`                 | Directory to scan recursively                                    |
+| `-file`               |                     | Scan a single file (overrides `-path`)                           |
+| `-ext`                | `.go`               | File extension to match                                          |
+| `-min`                | `2`                 | Minimum occurrences to report                                    |
+| `-min-size`           | `3`                 | Base pattern size (lines) to start growing from                  |
+| `-max-size`           | `0`                 | Maximum pattern size to grow to (0 = no limit)                   |
+| `-min-score`          | `5`                 | Minimum score (unique words + similarity bonus)                  |
+| `-min-similarity`     | `0.75`              | Minimum token similarity between occurrences (0.0-1.0)           |
+| `-top`                | `10`                | Show top N patterns by score                                     |
+| `-select`             |                     | Show detailed output for patterns (format: `skip..limit`)        |
+| `-strategy`           | `normalized-indent` | Detection strategy (see below)                                   |
+| `-comment`            | auto                | Override comment prefix (auto-detected by extension)             |
+| `-exclude`            |                     | Exclude files matching patterns (comma-separated globs)          |
+| `-no-cache`           | `false`             | Disable incremental caching, force full re-parse                 |
+| `-keep-overlaps`      | `false`             | Keep overlapping occurrences (don't prune adjacent matches)      |
+| `-github-annotations` | `false`             | Output GitHub Actions annotations for inline PR comments         |
+| `-github-level`       | `warning`           | GitHub annotation level: `notice`, `warning`, or `error`         |
+| `-git-diff`           |                     | Only annotate files changed vs this git ref (e.g., `origin/main`)|
+| `-compare`            |                     | Compare duplicates between two commits (format: `base..head`)    |
+| `-debug`              | `false`             | Print verbose progress for long-running phases                   |
+| `-timeout`            | `20`                | Hard timeout in seconds (0 disables)                             |
+
+## Detection Strategies
+
+| Strategy            | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| `normalized-indent` | Default. Uses indent deltas and first word per line        |
+| `word-indent`       | Uses raw indentation level and first word                  |
+| `word-only`         | Ignores indentation, matches on first words only           |
+| `inlineable`        | Detects small patterns suitable for inline extraction      |
 
 ## GitHub Actions Integration
 
@@ -143,9 +165,17 @@ QuickDup can output annotations that GitHub displays as inline comments on pull 
 ```yaml
 - name: Run QuickDup
   run: quickdup -path . -ext .go --github-annotations --no-cache
+
+# Only annotate changed files in a PR
+- name: Run QuickDup on changed files
+  run: quickdup -path . -ext .go --github-annotations --git-diff origin/main
+
+# Use error level instead of warning
+- name: Run QuickDup (fail on duplicates)
+  run: quickdup -path . -ext .go --github-annotations --github-level error
 ```
 
-When `--github-annotations` is enabled, QuickDup outputs warnings in GitHub's annotation format and skips writing `.quickdup/results.json` and `patterns.md`.
+When `--github-annotations` is enabled, QuickDup outputs in GitHub's annotation format.
 
 ## Incremental Caching
 
@@ -192,18 +222,40 @@ Scanning 558 files using 8 workers...
 Parsed 558 files (98234 lines of code)
 Detecting patterns...
 Growth stopped at 148 lines
-Filtered 23 low-similarity patterns (similarity < 50%)
-Found 2410 patterns with 3+ occurrences (showing top 10 by score)
+Filtered 23 low-similarity patterns (similarity < 75%)
 
-Score 15 [79 lines, 15 unique] found 3 times [a1b2c3d4e5f67890]:
-  src/services/auth.go:142
-  src/services/oauth.go:89
-  src/services/saml.go:201
+Duplication hotspots (lines):
+  1131 src/services/auth.go
+   940 src/services/oauth.go
+   894 src/services/saml.go
 
-...
-
-Total: 2410 duplicate patterns in 558 files (98234 lines) in ~500ms
+Total: 774 duplicate patterns in 558 files (98234 lines) in 544ms
+Results written to: .quickdup/normalized-indent-results.json
 ```
+
+With `--select 0..3`:
+
+```
+Pattern 1  [a1b2c3d4e5f67890]  Score 19  100% similar  47 lines  2 occurrences
+
+  Occurrence 1 src/services/auth.go:142
+    // ... code block with syntax highlighting ...
+
+  Occurrence 2 src/services/oauth.go:89
+    // ... code block with syntax highlighting ...
+
+───────────────────────────────────────────────────────────────────────────────
+Showing pattern 0 to 3
+
+Total: 774 duplicate patterns in 558 files (98234 lines) in 544ms
+Results written to: .quickdup/normalized-indent-results.json
+```
+
+## Screenshots
+
+`quickdup --path . --ext .go --select 4..1 --max-size 7`
+
+![QuickDup select output](assets/images/quickdup-select-output.png)
 
 ## Limitations
 
@@ -217,43 +269,3 @@ Token similarity filtering and clustering catch cases where occurrences differ s
 ## License
 
 MIT
-
-## Adding screenshots with termshot (2026-01-07T11:34:39.148Z)
-
-Prerequisites
-- termshot installed and available in PATH
-- This repository cloned locally
-
-Steps
-```bash
-set -euo pipefail
-ROOT="$HOME/git/asynkron/QuickDup"
-IMGDIR="$ROOT/assets/images"
-mkdir -p "$IMGDIR"
-cd "$ROOT"
-
-# Take a screenshot of a command invocation
-termshot -- <your command here>
-
-# Save the resulting image with a descriptive name
-cp -f out.png "$IMGDIR/<your-image-name>.png"
-
-# Append to the README (example snippet)
-cat >> README.md <<EOT
-
-## Screenshots ($(date -u +%Y-%m-%dT%H:%M:%S.%3NZ))
-
-Command: <your command here>
-
-![<description>](assets/images/<your-image-name>.png)
-EOT
-
-# Commit and push
-git add README.md assets/images/*
-git commit -m "Add screenshot <your-image-name>.png"
-git push
-```
-
-Notes
-- Repeat the termshot/copy/append steps for additional variations (e.g., different flags).
-- Keep images under assets/images and reference them with relative paths in README.

@@ -324,14 +324,11 @@ func main() {
 		PrintGitHubAnnotations(top, len(top), *githubLevel, *gitDiff, changedFiles)
 	}
 
-	PrintMatchSummary(len(matches), *minOccur, len(top))
-	PrintMatches(top, len(top))
 	PrintHotspots(matches)
 
-	elapsed := time.Since(startTime)
-	PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
-
 	if *githubAnnotations {
+		elapsed := time.Since(startTime)
+		PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
 		return
 	}
 
@@ -355,8 +352,12 @@ func main() {
 		}
 		selected := selectJSONPatterns(patterns, skip, limit)
 		PrintDetailedMatchesFromJSON(selected, extension)
-		fmt.Printf("\nShowing %d of %d patterns\n", len(selected), len(patterns))
+		PrintShowingPatterns(skip, limit)
 	}
+
+	elapsed := time.Since(startTime)
+	PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
+	PrintResultsPath(outputPath)
 }
 
 // parseSelectRange parses a "skip..limit" string into skip and limit integers

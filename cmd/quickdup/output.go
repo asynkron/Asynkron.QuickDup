@@ -394,9 +394,18 @@ const glowOneDarkJSON = `{
   "chroma": { "style": "dracula" }
 }`
 
+const glamKeywordGreen = `{
+  "chroma": {
+    "style": "dracula",
+    "styles": {
+      "keyword": { "color": "#98C379" }
+    }
+  }
+}`
+
 func renderWithGlow(markdown string) {
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylesFromJSONBytes([]byte(glamKeywordGreen)),
 		glamour.WithWordWrap(0),
 	)
 	if err != nil {

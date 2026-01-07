@@ -1,3 +1,7 @@
+[![CI](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml
+ci.yml/badge.svg)](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml
+ci.yml)
+
 <img src="assets/images/logo.png" width="100%" />
 
 # QuickDup - Delta-Indent Clone Detection

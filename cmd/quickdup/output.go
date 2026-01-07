@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -395,13 +395,20 @@ const glowOneDarkJSON = `{
 }`
 
 func renderWithGlow(markdown string) {
-	cmd := exec.Command("glow", "-w", "0", "-")
-	cmd.Stdin = strings.NewReader(markdown)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(0),
+	)
+	if err != nil {
 		fmt.Print(markdown)
+		return
 	}
+	out, err := r.Render(markdown)
+	if err != nil {
+		fmt.Print(markdown)
+		return
+	}
+	fmt.Print(out)
 }
 
 // ReadJSONResults reads results from a JSON file

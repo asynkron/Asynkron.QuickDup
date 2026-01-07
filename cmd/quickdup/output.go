@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	termenv "github.com/muesli/termenv"
 )
 
 // Theme defines the color scheme for console output
@@ -396,21 +395,13 @@ const glowOneDarkJSON = `{
 }`
 
 func renderWithGlow(markdown string) {
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStylesFromJSONBytes([]byte(glowOneDarkJSON)),
-		glamour.WithWordWrap(0),
-		glamour.WithColorProfile(termenv.TrueColor),
-	)
-	if err != nil {
+	cmd := exec.Command("glow", "-w", "0", "-")
+	cmd.Stdin = strings.NewReader(markdown)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		fmt.Print(markdown)
-		return
 	}
-	out, err := r.Render(markdown)
-	if err != nil {
-		fmt.Print(markdown)
-		return
-	}
-	fmt.Print(out)
 }
 
 // ReadJSONResults reads results from a JSON file

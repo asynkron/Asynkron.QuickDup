@@ -101,6 +101,18 @@ quickdup -path ./src -ext .cs -min-similarity 0.7
 
 # Show top 20 patterns, require 5+ occurrences
 quickdup -path . -ext .ts -top 20 -min 5
+
+# Scan a single file (or pass a file path to -path)
+quickdup --file ./src/main.go
+
+# Verbose progress for long-running phases
+quickdup --file ./src/main.go --debug
+
+# Hard timeout (seconds)
+quickdup --file ./src/main.go --timeout 20
+
+# Cap pattern growth at 50 lines
+quickdup -path . -ext .go --max-size 50
 ```
 
 ## Flags
@@ -108,15 +120,19 @@ quickdup -path . -ext .ts -top 20 -min 5
 | Flag                  | Default | Description                                              |
 | --------------------- | ------- | -------------------------------------------------------- |
 | `-path`               | `.`     | Directory to scan recursively                            |
+| `-file`               |         | Scan a single file (overrides `-path`)                   |
 | `-ext`                | `.go`   | File extension to match                                  |
 | `-min`                | `3`     | Minimum occurrences to report                            |
 | `-min-size`           | `3`     | Base pattern size (lines) to start growing from          |
+| `-max-size`           | `0`     | Maximum pattern size to grow to (0 = no limit)           |
 | `-min-score`          | `5`     | Minimum score (unique words + similarity bonus)          |
 | `-min-similarity`     | `0.5`   | Minimum token similarity between occurrences (0.0-1.0)   |
 | `-top`                | `10`    | Show top N patterns by score                             |
 | `-comment`            | auto    | Override comment prefix (auto-detected by extension)     |
 | `-no-cache`           | `false` | Disable incremental caching, force full re-parse         |
 | `-github-annotations` | `false` | Output GitHub Actions annotations for inline PR comments |
+| `-debug`              | `false` | Print verbose progress for long-running phases           |
+| `-timeout`            | `20`    | Hard timeout in seconds (0 disables)                     |
 
 ## GitHub Actions Integration
 

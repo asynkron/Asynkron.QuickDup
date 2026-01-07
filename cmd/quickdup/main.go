@@ -13,6 +13,7 @@ import (
 
 // Active strategy (set from --strategy flag)
 var activeStrategy Strategy
+var debugEnabled bool
 
 // Default comment prefixes by file extension
 var commentPrefixes = map[string]string{
@@ -96,10 +97,12 @@ var commentPrefix string
 
 func main() {
 	path := flag.String("path", ".", "Path to scan")
+	filePath := flag.String("file", "", "Scan a single file (overrides --path)")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 2, "Minimum occurrences to report")
 	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords × adjusted similarity)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
+	maxSize := flag.Int("max-size", 0, "Maximum pattern size to grow to (0 = no limit)")
 	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
@@ -112,7 +115,22 @@ func main() {
 	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable")
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
 	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
+	debug := flag.Bool("debug", false, "Print verbose progress for long-running phases")
+	timeoutSeconds := flag.Int("timeout", 20, "Hard timeout in seconds (0 disables)")
 	flag.Parse()
+	debugEnabled = *debug
+	if *timeoutSeconds > 0 {
+		timeout := time.Duration(*timeoutSeconds) * time.Second
+		go func() {
+			time.Sleep(timeout)
+			fmt.Fprintf(os.Stderr, "Error: timed out after %s\n", timeout)
+			os.Exit(1)
+		}()
+	}
+	if *maxSize > 0 && *maxSize < *minSize {
+		fmt.Fprintf(os.Stderr, "Error: --max-size must be >= --min-size\n")
+		os.Exit(1)
+	}
 
 	// Select strategy
 	strategies := map[string]Strategy{
@@ -141,7 +159,7 @@ func main() {
 		if *path != "." {
 			subdir = *path
 		}
-		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minScore, *minSize, *minSimilarity, *strategyName)
+		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minScore, *minSize, *maxSize, *minSimilarity, *strategyName)
 		return
 	}
 
@@ -172,17 +190,40 @@ func main() {
 
 	startTime := time.Now()
 
+	folder := *path
+	extension := *ext
+	singleFile := ""
+	if *filePath != "" {
+		singleFile = *filePath
+	} else if info, err := os.Stat(*path); err == nil && !info.IsDir() {
+		singleFile = *path
+	}
+	if singleFile != "" {
+		info, err := os.Stat(singleFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: file not found: %s\n", singleFile)
+			os.Exit(1)
+		}
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "Error: --file expects a file path: %s\n", singleFile)
+			os.Exit(1)
+		}
+		folder = filepath.Dir(singleFile)
+		extension = filepath.Ext(singleFile)
+		if extension == "" {
+			extension = *ext
+		}
+	}
+	extension = strings.ToLower(extension)
+
 	// Auto-detect comment prefix from extension, allow override
 	if *comment != "" {
 		commentPrefix = *comment
-	} else if prefix, ok := commentPrefixes[*ext]; ok {
+	} else if prefix, ok := commentPrefixes[extension]; ok {
 		commentPrefix = prefix
 	} else {
 		commentPrefix = "//" // fallback default
 	}
-
-	folder := *path
-	extension := *ext
 
 	// Load user-ignored hashes from ignore.json
 	userIgnored := LoadIgnoredHashes(folder, *strategyName)
@@ -190,35 +231,40 @@ func main() {
 
 	// First pass: count files
 	var files []string
-	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.EqualFold(filepath.Ext(path), extension) {
-			// Check exclude patterns
-			excluded := false
-			for _, pattern := range excludePatterns {
-				// Check if pattern matches basename (glob) or is contained in path (substring)
-				if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
-					excluded = true
-					break
+	var err error
+	if singleFile != "" {
+		files = []string{singleFile}
+	} else {
+		err = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && strings.EqualFold(filepath.Ext(path), extension) {
+				// Check exclude patterns
+				excluded := false
+				for _, pattern := range excludePatterns {
+					// Check if pattern matches basename (glob) or is contained in path (substring)
+					if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+						excluded = true
+						break
+					}
+					// Also check if pattern is a substring of the path (for directory patterns like ".Tests/")
+					if strings.Contains(path, pattern) {
+						excluded = true
+						break
+					}
 				}
-				// Also check if pattern is a substring of the path (for directory patterns like ".Tests/")
-				if strings.Contains(path, pattern) {
-					excluded = true
-					break
+				if !excluded {
+					files = append(files, path)
 				}
 			}
-			if !excluded {
-				files = append(files, path)
-			}
-		}
-		return nil
-	})
+			return nil
+		})
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error walking directory: %v\n", err)
-		os.Exit(1)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error walking directory: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	totalFiles := len(files)
@@ -255,7 +301,7 @@ func main() {
 	// Phase 2: Pattern detection with growth
 	detectStart := time.Now()
 	PrintDetectStart()
-	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize, *keepOverlaps)
+	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize, *maxSize, *keepOverlaps)
 	detectTime := time.Since(detectStart)
 	PrintDetectComplete(detectTime)
 
@@ -289,7 +335,7 @@ func main() {
 		return
 	}
 
-	outputPath := filepath.Join(*path, ".quickdup", *strategyName+"-results.json")
+	outputPath := filepath.Join(folder, ".quickdup", *strategyName+"-results.json")
 	if err := WriteJSONResults(matches, outputPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -308,7 +354,7 @@ func main() {
 			os.Exit(1)
 		}
 		selected := selectJSONPatterns(patterns, skip, limit)
-		PrintDetailedMatchesFromJSON(selected, *ext)
+		PrintDetailedMatchesFromJSON(selected, extension)
 		fmt.Printf("\nShowing %d of %d patterns\n", len(selected), len(patterns))
 	}
 }

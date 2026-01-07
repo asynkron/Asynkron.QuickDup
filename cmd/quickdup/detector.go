@@ -45,7 +45,7 @@ func filterOverlappingOccurrences(locs []PatternLocation, patternLen int) []Patt
 	return result
 }
 
-func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int, keepOverlaps bool) map[uint64][]PatternLocation {
+func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int, maxSize int, keepOverlaps bool) map[uint64][]PatternLocation {
 	allPatterns := make(map[uint64][]PatternLocation)
 	numWorkers := runtime.NumCPU()
 
@@ -57,6 +57,9 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 
 	// Step 1: Generate base patterns in parallel (per file)
 	basePatterns := generateBasePatternsParallel(fileData, files, minSize, numWorkers)
+	if debugEnabled {
+		fmt.Printf("[debug] base patterns: %d (minOccur=%d)\n", len(basePatterns), minOccur)
+	}
 
 	// Step 2: Filter base patterns to >= minOccur
 	survivors := make(map[uint64][]PatternLocation)
@@ -69,8 +72,11 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 
 	// Step 3: Grow patterns by extending the window
 	currentLen := minSize
-	for len(survivors) > 0 {
+	for len(survivors) > 0 && (maxSize == 0 || currentLen < maxSize) {
 		currentLen++
+		if debugEnabled {
+			fmt.Printf("[debug] grow to len=%d from survivors=%d occurrences=%d\n", currentLen, len(survivors), countLocations(survivors))
+		}
 
 		// Extend all locations in parallel
 		nextPatterns := extendPatternsParallel(survivors, fileData, currentLen, numWorkers)
@@ -85,6 +91,9 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 					grewToChild[OccurrenceKey{loc.Filename, loc.EntryIndex}] = true
 				}
 			}
+		}
+		if debugEnabled {
+			fmt.Printf("[debug] survivors at len=%d: %d\n", currentLen, len(survivors))
 		}
 
 		// Add previous generation to results, filtering out occurrences that grew
@@ -107,8 +116,30 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 		previousGen = survivors
 	}
 
-	fmt.Printf("Growth stopped at %d lines\n", currentLen-1)
+	if maxSize > 0 && len(previousGen) > 0 && currentLen >= maxSize {
+		prevLen := currentLen
+		for hash, locs := range previousGen {
+			filteredLocs := locs
+			if !keepOverlaps {
+				filteredLocs = filterOverlappingOccurrences(filteredLocs, prevLen)
+			}
+			if len(filteredLocs) >= minOccur {
+				allPatterns[hash] = filteredLocs
+			}
+		}
+		fmt.Printf("Growth stopped at %d lines (max-size)\n", currentLen)
+	} else {
+		fmt.Printf("Growth stopped at %d lines\n", currentLen-1)
+	}
 	return allPatterns
+}
+
+func countLocations(patterns map[uint64][]PatternLocation) int {
+	total := 0
+	for _, locs := range patterns {
+		total += len(locs)
+	}
+	return total
 }
 
 // generateBasePatternsParallel generates base patterns using parallel workers

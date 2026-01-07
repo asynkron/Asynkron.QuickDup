@@ -389,14 +389,14 @@ const glowOneDarkJSON = `{
   "item": { "color": "#ABB2BF" },
   "table": { "header": { "color": "#61AFEF", "bold": true }, "row": { "color": "#ABB2BF" }, "cellPadding": 1 },
   "horizontalRule": { "format": "─" },
-  "chroma": { "style": "dracula" }
+  "chroma": { "style": "onedark" }
 }`
 
 func renderWithGlow(markdown string) {
 	style := os.Getenv("QUICKDUP_GLOW_STYLE")
 	args := []string{"-w", "0"}
 	var tmpPath string
-	if style == "onedark" {
+	if style == "" || style == "onedark" {
 		tmp, err := os.CreateTemp("", "glow-onedark-*.json")
 		if err == nil {
 			_, _ = tmp.WriteString(glowOneDarkJSON)
@@ -404,10 +404,8 @@ func renderWithGlow(markdown string) {
 			tmpPath = tmp.Name()
 			args = append(args, "-s", tmpPath)
 		}
-	} else if style != "" {
-		args = append(args, "-s", style)
 	} else {
-		args = append(args, "-s", "dracula")
+		args = append(args, "-s", style)
 	}
 	args = append(args, "-")
 	cmd := exec.Command("glow", args...)

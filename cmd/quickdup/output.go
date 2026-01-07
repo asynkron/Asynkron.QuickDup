@@ -394,19 +394,86 @@ const glowOneDarkJSON = `{
   "chroma": { "style": "dracula" }
 }`
 
-const glamKeywordGreen = `{
-  "chroma": {
-    "style": "dracula",
-    "styles": {
-      "keyword": { "color": "#98C379" }
+const glamOneDark = `{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "#ABB2BF",
+    "margin": 2
+  },
+  "block_quote": {
+    "indent": 1,
+    "indent_token": "│ ",
+    "color": "#5C6370"
+  },
+  "paragraph": {},
+  "list": {
+    "color": "#ABB2BF",
+    "level_indent": 2
+  },
+  "heading": {
+    "block_suffix": "\n",
+    "color": "#C678DD",
+    "bold": true
+  },
+  "h1": { "prefix": "# ", "bold": true },
+  "h2": { "prefix": "## " },
+  "h3": { "prefix": "### " },
+  "text": {},
+  "strikethrough": { "crossed_out": true },
+  "emph": { "italic": true, "color": "#E06C75" },
+  "strong": { "bold": true, "color": "#E5C07B" },
+  "hr": { "color": "#5C6370", "format": "\n────────\n" },
+  "item": { "block_prefix": "• ", "color": "#98C379" },
+  "enumeration": { "block_prefix": ". ", "color": "#61AFEF" },
+  "link": { "color": "#61AFEF", "underline": true },
+  "link_text": { "color": "#56B6C2" },
+  "code": { "color": "#98C379" },
+  "code_block": {
+    "color": "#ABB2BF",
+    "margin": 2,
+    "chroma": {
+      "text": { "color": "#ABB2BF" },
+      "error": { "color": "#ABB2BF", "background_color": "#E06C75" },
+      "comment": { "color": "#5C6370" },
+      "comment_preproc": { "color": "#C678DD" },
+      "keyword": { "color": "#C678DD" },
+      "keyword_reserved": { "color": "#C678DD" },
+      "keyword_namespace": { "color": "#C678DD" },
+      "keyword_type": { "color": "#E5C07B" },
+      "operator": { "color": "#56B6C2" },
+      "punctuation": { "color": "#ABB2BF" },
+      "name": { "color": "#ABB2BF" },
+      "name_builtin": { "color": "#56B6C2" },
+      "name_tag": { "color": "#E06C75" },
+      "name_attribute": { "color": "#E5C07B" },
+      "name_class": { "color": "#E5C07B" },
+      "name_constant": { "color": "#D19A66" },
+      "name_decorator": { "color": "#E5C07B" },
+      "name_exception": {},
+      "name_function": { "color": "#61AFEF" },
+      "name_other": {},
+      "literal": {},
+      "literal_number": { "color": "#D19A66" },
+      "literal_date": {},
+      "literal_string": { "color": "#98C379" },
+      "literal_string_escape": { "color": "#56B6C2" },
+      "generic_deleted": { "color": "#E06C75" },
+      "generic_emph": { "italic": true },
+      "generic_inserted": { "color": "#98C379" },
+      "generic_strong": { "bold": true },
+      "generic_subheading": { "color": "#C678DD" }
     }
-  }
+  },
+  "table": {},
+  "definition_list": {},
+  "definition_term": {},
+  "definition_description": { "block_prefix": "\n→ " }
 }`
 
 func renderWithGlow(markdown string) {
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithStylesFromJSONBytes([]byte(glamKeywordGreen)),
+		glamour.WithStylesFromJSONBytes([]byte(glamOneDark)),
 		glamour.WithWordWrap(0),
 	)
 	if err != nil {

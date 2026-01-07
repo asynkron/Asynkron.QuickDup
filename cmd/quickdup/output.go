@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	_ "embed"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -377,14 +376,27 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 }
 
 // renderWithGlow pipes markdown content through glow for rendering
-//go:embed assets/glow/onedark.json
-var glowOneDark []byte
+const glowOneDarkJSON = `{
+  "document": { "color": "#ABB2BF", "backgroundColor": "#282C34" },
+  "blockQuote": { "color": "#5C6370", "italic": true },
+  "heading": { "color": "#61AFEF", "bold": true },
+  "h1": { "color": "#61AFEF", "bold": true },
+  "h2": { "color": "#E5C07B", "bold": true },
+  "h3": { "color": "#98C379", "bold": true },
+  "strong": { "color": "#E5C07B", "bold": true },
+  "emph": { "color": "#E06C75", "italic": true },
+  "link": { "color": "#61AFEF", "underline": true },
+  "item": { "color": "#ABB2BF" },
+  "table": { "header": { "color": "#61AFEF", "bold": true }, "row": { "color": "#ABB2BF" }, "cellPadding": 1 },
+  "horizontalRule": { "format": "─" },
+  "chroma": { "style": "dracula" }
+}`
 
 func renderWithGlow(markdown string) {
-	// Write embedded style to a temp file for glow so it works from any cwd
+	// Write embedded style JSON to a temp file and point glow at it
 	tmp, err := os.CreateTemp("", "glow-onedark-*.json")
 	if err == nil {
-		_, _ = tmp.Write(glowOneDark)
+		_, _ = tmp.WriteString(glowOneDarkJSON)
 		_ = tmp.Close()
 	}
 	args := []string{"-w", "0"}

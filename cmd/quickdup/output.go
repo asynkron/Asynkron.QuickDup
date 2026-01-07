@@ -393,14 +393,22 @@ const glowOneDarkJSON = `{
 }`
 
 func renderWithGlow(markdown string) {
-	// Write embedded style JSON to a temp file and point glow at it
-	tmp, err := os.CreateTemp("", "glow-onedark-*.json")
-	if err == nil {
-		_, _ = tmp.WriteString(glowOneDarkJSON)
-		_ = tmp.Close()
-	}
+	style := os.Getenv("QUICKDUP_GLOW_STYLE")
 	args := []string{"-w", "0"}
-	if err == nil { args = append(args, "-s", tmp.Name()) }
+	var tmpPath string
+	if style == "onedark" {
+		tmp, err := os.CreateTemp("", "glow-onedark-*.json")
+		if err == nil {
+			_, _ = tmp.WriteString(glowOneDarkJSON)
+			_ = tmp.Close()
+			tmpPath = tmp.Name()
+			args = append(args, "-s", tmpPath)
+		}
+	} else if style != "" {
+		args = append(args, "-s", style)
+	} else {
+		args = append(args, "-s", "dracula")
+	}
 	args = append(args, "-")
 	cmd := exec.Command("glow", args...)
 	cmd.Stdin = strings.NewReader(markdown)
@@ -409,7 +417,7 @@ func renderWithGlow(markdown string) {
 	if runErr := cmd.Run(); runErr != nil {
 		fmt.Print(markdown)
 	}
-	if err == nil { _ = os.Remove(tmp.Name()) }
+	if tmpPath != "" { _ = os.Remove(tmpPath) }
 }
 
 // ReadJSONResults reads results from a JSON file

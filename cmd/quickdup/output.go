@@ -405,6 +405,7 @@ const glamKeywordGreen = `{
 
 func renderWithGlow(markdown string) {
 	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
 		glamour.WithStylesFromJSONBytes([]byte(glamKeywordGreen)),
 		glamour.WithWordWrap(0),
 	)

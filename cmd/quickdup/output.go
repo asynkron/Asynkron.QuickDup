@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -393,29 +393,20 @@ const glowOneDarkJSON = `{
 }`
 
 func renderWithGlow(markdown string) {
-	style := os.Getenv("QUICKDUP_GLOW_STYLE")
-	args := []string{"-w", "0"}
-	var tmpPath string
-	if style == "" || style == "onedark" {
-		tmp, err := os.CreateTemp("", "glow-onedark-*.json")
-		if err == nil {
-			_, _ = tmp.WriteString(glowOneDarkJSON)
-			_ = tmp.Close()
-			tmpPath = tmp.Name()
-			args = append(args, "-s", tmpPath)
-		}
-	} else {
-		args = append(args, "-s", style)
-	}
-	args = append(args, "-")
-	cmd := exec.Command("glow", args...)
-	cmd.Stdin = strings.NewReader(markdown)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if runErr := cmd.Run(); runErr != nil {
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStylesFromJSONBytes([]byte(glowOneDarkJSON)),
+		glamour.WithWordWrap(0),
+	)
+	if err != nil {
 		fmt.Print(markdown)
+		return
 	}
-	if tmpPath != "" { _ = os.Remove(tmpPath) }
+	out, err := r.Render(markdown)
+	if err != nil {
+		fmt.Print(markdown)
+		return
+	}
+	fmt.Print(out)
 }
 
 // ReadJSONResults reads results from a JSON file

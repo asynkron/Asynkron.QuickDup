@@ -23,14 +23,24 @@ type Theme struct {
 	Dim      lipgloss.Style
 }
 
+// One Dark palette (Atom One)
+const (
+	colorBranch = "#5C6370" // comment gray
+	colorGreen  = "#98C379" // green
+	colorPurple = "#C678DD" // purple
+	colorBlue   = "#61AFEF" // blue
+	colorText   = "#ABB2BF" // light gray
+	colorRed    = "#E06C75" // red
+)
+
 // DefaultTheme is the default color scheme
 var DefaultTheme = Theme{
-	Score:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")),
-	Hash:     lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
-	Location: lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
-	LineNum:  lipgloss.NewStyle().Foreground(lipgloss.Color("221")),
-	Summary:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("82")),
-	Dim:      lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	Score:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorGreen)),
+	Hash:     lipgloss.NewStyle().Foreground(lipgloss.Color(colorBranch)),
+	Location: lipgloss.NewStyle().Foreground(lipgloss.Color(colorBlue)),
+	LineNum:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorPurple)),
+	Summary:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorText)),
+	Dim:      lipgloss.NewStyle().Foreground(lipgloss.Color(colorBranch)),
 }
 
 // Current theme (can be changed at runtime)
@@ -38,11 +48,11 @@ var theme = DefaultTheme
 
 // Similarity color styles
 var (
-	simGreen      = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))  // 95%+
-	simYellowGreen = lipgloss.NewStyle().Foreground(lipgloss.Color("154")) // 85%+
-	simOrange     = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // 75%+
-	simRed        = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // 60%+
-	simDim        = lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // below 60%
+	simGreen       = lipgloss.NewStyle().Foreground(lipgloss.Color(colorGreen))  // 95%+
+	simYellowGreen = lipgloss.NewStyle().Foreground(lipgloss.Color(colorBlue))   // 85%+
+	simOrange      = lipgloss.NewStyle().Foreground(lipgloss.Color(colorPurple)) // 75%+
+	simRed         = lipgloss.NewStyle().Foreground(lipgloss.Color(colorRed))    // 60%+
+	simDim         = lipgloss.NewStyle().Foreground(lipgloss.Color(colorBranch)) // below 60%
 )
 
 // renderSimilarity returns a colorized similarity string

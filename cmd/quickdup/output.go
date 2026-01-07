@@ -390,7 +390,7 @@ const glowOneDarkJSON = `{
   "item": { "color": "#ABB2BF" },
   "table": { "header": { "color": "#61AFEF", "bold": true }, "row": { "color": "#ABB2BF" }, "cellPadding": 1 },
   "horizontalRule": { "format": "─" },
-  "chroma": { "style": "onedark" }
+  "chroma": { "style": "dracula" }
 }`
 
 func renderWithGlow(markdown string) {

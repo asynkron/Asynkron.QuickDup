@@ -358,13 +358,14 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
 
-		// Build markdown for code blocks only
+		// Build markdown for code blocks only (detect per-occurrence language)
 		var sb strings.Builder
 		for j, loc := range m.Locations {
 			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
 				j+1, loc.Filename, loc.LineStart))
 
-			sb.WriteString(fmt.Sprintf("```%s\n", lang))
+			langLocal := langFromExt[strings.ToLower(filepath.Ext(loc.Filename))]
+			sb.WriteString(fmt.Sprintf("```%s\n", langLocal))
 			normalizedLines := normalizeIndent(loc.Pattern)
 			for _, line := range normalizedLines {
 				sb.WriteString(line + "\n")
@@ -461,7 +462,7 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 			theme.Dim.Render(fmt.Sprintf("%d lines", p.Lines)),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", p.Occurrences)))
 
-		// Build markdown for code blocks only
+		// Build markdown for code blocks only (detect per-occurrence language)
 		var sb strings.Builder
 		for j, loc := range p.Locations {
 			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
@@ -469,7 +470,8 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 
 			// Read source lines from file
 			lines := readSourceLines(loc.Filename, loc.LineStart, p.Lines)
-			sb.WriteString(fmt.Sprintf("```%s\n", lang))
+			langLocal := langFromExt[strings.ToLower(filepath.Ext(loc.Filename))]
+			sb.WriteString(fmt.Sprintf("```%s\n", langLocal))
 			for _, line := range lines {
 				sb.WriteString(line + "\n")
 			}

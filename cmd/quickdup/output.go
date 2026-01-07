@@ -32,15 +32,16 @@ const (
 	colorBlue   = "#61AFEF" // blue
 	colorText   = "#ABB2BF" // light gray
 	colorRed    = "#E06C75" // red
+	colorYellow = "#E5C07B" // yellow
 )
 
 // DefaultTheme is the default color scheme
 var DefaultTheme = Theme{
-	Score:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorGreen)),
+	Score:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorYellow)),
 	Hash:     lipgloss.NewStyle().Foreground(lipgloss.Color(colorBranch)),
 	Location: lipgloss.NewStyle().Foreground(lipgloss.Color(colorBlue)),
 	LineNum:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorPurple)),
-	Summary:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorText)),
+	Summary:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorGreen)),
 	Dim:      lipgloss.NewStyle().Foreground(lipgloss.Color(colorBranch)),
 }
 

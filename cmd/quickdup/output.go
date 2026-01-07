@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	termenv "github.com/muesli/termenv"
 )
 
 // Theme defines the color scheme for console output
@@ -396,6 +397,7 @@ func renderWithGlow(markdown string) {
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStylesFromJSONBytes([]byte(glowOneDarkJSON)),
 		glamour.WithWordWrap(0),
+		glamour.WithColorProfile(termenv.TrueColor),
 	)
 	if err != nil {
 		fmt.Print(markdown)

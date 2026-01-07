@@ -1,6 +1,4 @@
-[![CI](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml
-ci.yml/badge.svg)](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml
-ci.yml)
+[![CI](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml/badge.svg)](https://github.com/asynkron/Asynkron.QuickDup/actions/workflows/quickdup.yml)
 
 <img src="assets/images/logo.png" width="100%" />
 

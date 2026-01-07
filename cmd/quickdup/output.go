@@ -357,22 +357,22 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
 
-		// Build markdown for code blocks only (detect per-occurrence language)
-		var sb strings.Builder
+		// Render each occurrence with styled header + code block
 		for j, loc := range m.Locations {
-			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
-				j+1, loc.Filename, loc.LineStart))
+			fmt.Printf("  %s %s\n",
+				theme.LineNum.Render(fmt.Sprintf("Occurrence %d", j+1)),
+				theme.Location.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
 
+			var sb strings.Builder
 			langLocal := langFromExt[strings.ToLower(filepath.Ext(loc.Filename))]
 			sb.WriteString(fmt.Sprintf("```%s\n", langLocal))
 			normalizedLines := normalizeIndent(loc.Pattern)
 			for _, line := range normalizedLines {
 				sb.WriteString(line + "\n")
 			}
-			sb.WriteString("```\n\n")
+			sb.WriteString("```\n")
+			renderWithGlow(sb.String())
 		}
-
-		renderWithGlow(sb.String())
 		fmt.Println(theme.Dim.Render("───────────────────────────────────────────────────────────────────────────────"))
 	}
 }
@@ -428,7 +428,7 @@ const glamOneDark = `{
   "enumeration": { "block_prefix": ". ", "color": "#61AFEF" },
   "link": { "color": "#61AFEF", "underline": true },
   "link_text": { "color": "#56B6C2" },
-  "code": { "color": "#98C379" },
+  "code": { "color": "#61AFEF" },
   "code_block": {
     "color": "#ABB2BF",
     "margin": 2,
@@ -537,23 +537,23 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 			theme.Dim.Render(fmt.Sprintf("%d lines", p.Lines)),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", p.Occurrences)))
 
-		// Build markdown for code blocks only (detect per-occurrence language)
-		var sb strings.Builder
+		// Render each occurrence with styled header + code block
 		for j, loc := range p.Locations {
-			sb.WriteString(fmt.Sprintf("### Occurrence %d: `%s:%d`\n\n",
-				j+1, loc.Filename, loc.LineStart))
+			fmt.Printf("  %s %s\n",
+				theme.LineNum.Render(fmt.Sprintf("Occurrence %d", j+1)),
+				theme.Location.Render(fmt.Sprintf("%s:%d", loc.Filename, loc.LineStart)))
 
 			// Read source lines from file
 			lines := readSourceLines(loc.Filename, loc.LineStart, p.Lines)
+			var sb strings.Builder
 			langLocal := langFromExt[strings.ToLower(filepath.Ext(loc.Filename))]
 			sb.WriteString(fmt.Sprintf("```%s\n", langLocal))
 			for _, line := range lines {
 				sb.WriteString(line + "\n")
 			}
-			sb.WriteString("```\n\n")
+			sb.WriteString("```\n")
+			renderWithGlow(sb.String())
 		}
-
-		renderWithGlow(sb.String())
 		fmt.Println(theme.Dim.Render("───────────────────────────────────────────────────────────────────────────────"))
 	}
 }

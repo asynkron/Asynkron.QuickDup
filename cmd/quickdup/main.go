@@ -106,7 +106,7 @@ func main() {
 	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by pattern length")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
-	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
+	noCache := flag.Bool("no-cache", false, "Disable incremental caching (word-indent only), force full re-parse")
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")

@@ -179,7 +179,7 @@ When `--github-annotations` is enabled, QuickDup outputs in GitHub's annotation 
 
 ## Incremental Caching
 
-QuickDup caches parsed file data in `.quickdup/cache.gob`. On subsequent runs, only modified files are re-parsed:
+QuickDup caches parsed file data for the `word-indent` strategy in `.quickdup/word-indent-cache.gob`. Other strategies always re-parse files (no cache yet). On subsequent runs, only modified files are re-parsed:
 
 ```
 Parsed 558 files (542 cached, 16 parsed) (98234 lines of code)

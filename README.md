@@ -73,7 +73,7 @@ This eliminates most false positives like "all error handlers look similar struc
 ### Phase 4: Output
 
 Results written to `.quickdup/` directory:
-- `results.json` — Machine-readable patterns with locations
+- `<strategy>-results.json` — Machine-readable patterns with locations (e.g. `normalized-indent-results.json`)
 
 ## Installation
 
@@ -179,7 +179,7 @@ When `--github-annotations` is enabled, QuickDup outputs in GitHub's annotation 
 
 ## Incremental Caching
 
-QuickDup caches parsed file data in `.quickdup/cache.gob`. On subsequent runs, only modified files are re-parsed:
+QuickDup caches parsed file data in `.quickdup/<strategy>-cache.gob` (currently written for `--strategy word-indent`). On subsequent runs, only modified files are re-parsed:
 
 ```
 Parsed 558 files (542 cached, 16 parsed) (98234 lines of code)
@@ -189,7 +189,7 @@ This dramatically speeds up repeated runs during development. Use `-no-cache` to
 
 ## Ignoring Patterns
 
-Create `.quickdup/ignore.json` to suppress known patterns:
+Create `.quickdup/<strategy>-ignore.json` to suppress known patterns:
 
 ```json
 {

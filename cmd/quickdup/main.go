@@ -43,28 +43,28 @@ var commentPrefixes = map[string]string{
 	".v":     "//",
 	".zig":   "//",
 	// Hash-style
-	".py":     "#",
-	".rb":     "#",
-	".sh":     "#",
-	".bash":   "#",
-	".zsh":    "#",
-	".pl":     "#",
-	".pm":     "#",
-	".r":      "#",
-	".R":      "#",
-	".yaml":   "#",
-	".yml":    "#",
-	".toml":   "#",
-	".tf":     "#",
-	".cmake":  "#",
-	".make":   "#",
-	".mk":     "#",
-	".ps1":    "#",
-	".nim":    "#",
-	".jl":     "#",
-	".ex":     "#",
-	".exs":    "#",
-	".cr":     "#",
+	".py":    "#",
+	".rb":    "#",
+	".sh":    "#",
+	".bash":  "#",
+	".zsh":   "#",
+	".pl":    "#",
+	".pm":    "#",
+	".r":     "#",
+	".R":     "#",
+	".yaml":  "#",
+	".yml":   "#",
+	".toml":  "#",
+	".tf":    "#",
+	".cmake": "#",
+	".make":  "#",
+	".mk":    "#",
+	".ps1":   "#",
+	".nim":   "#",
+	".jl":    "#",
+	".ex":    "#",
+	".exs":   "#",
+	".cr":    "#",
 	// Double-dash style
 	".sql":  "--",
 	".lua":  "--",
@@ -96,38 +96,18 @@ var commentPrefixes = map[string]string{
 var commentPrefix string
 
 func main() {
-	path := flag.String("path", ".", "Path to scan")
-	filePath := flag.String("file", "", "Scan a single file (overrides --path)")
-	ext := flag.String("ext", ".go", "File extension to scan")
-	minOccur := flag.Int("min", 2, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords × adjusted similarity)")
-	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
-	maxSize := flag.Int("max-size", 0, "Maximum pattern size to grow to (0 = no limit)")
-	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
-	topN := flag.Int("top", 10, "Show top N matches by pattern length")
-	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
-	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
-	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
-	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
-	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
-	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
-	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable")
-	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
-	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
-	debug := flag.Bool("debug", false, "Print verbose progress for long-running phases")
-	timeoutSeconds := flag.Int("timeout", 20, "Hard timeout in seconds (0 disables)")
+	flags := registerFlags(flag.CommandLine)
 	flag.Parse()
-	debugEnabled = *debug
-	if *timeoutSeconds > 0 {
-		timeout := time.Duration(*timeoutSeconds) * time.Second
+	debugEnabled = *flags.debug
+	if *flags.timeoutSeconds > 0 {
+		timeout := time.Duration(*flags.timeoutSeconds) * time.Second
 		go func() {
 			time.Sleep(timeout)
 			fmt.Fprintf(os.Stderr, "Error: timed out after %s\n", timeout)
 			os.Exit(1)
 		}()
 	}
-	if *maxSize > 0 && *maxSize < *minSize {
+	if *flags.maxSize > 0 && *flags.maxSize < *flags.minSize {
 		fmt.Fprintf(os.Stderr, "Error: --max-size must be >= --min-size\n")
 		os.Exit(1)
 	}
@@ -139,16 +119,16 @@ func main() {
 		"word-only":         &WordOnlyStrategy{},
 		"inlineable":        &InlineableStrategy{},
 	}
-	if s, ok := strategies[*strategyName]; ok {
+	if s, ok := strategies[*flags.strategyName]; ok {
 		activeStrategy = s
 	} else {
-		fmt.Fprintf(os.Stderr, "Unknown strategy: %s\n", *strategyName)
+		fmt.Fprintf(os.Stderr, "Unknown strategy: %s\n", *flags.strategyName)
 		os.Exit(1)
 	}
 
 	// Handle compare mode
-	if *compare != "" {
-		parts := strings.Split(*compare, "..")
+	if *flags.compare != "" {
+		parts := strings.Split(*flags.compare, "..")
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Error: --compare requires format 'base..head'\n")
 			os.Exit(1)
@@ -156,17 +136,17 @@ func main() {
 		baseRef, headRef := parts[0], parts[1]
 		// Extract subdir from path if it's not "."
 		subdir := ""
-		if *path != "." {
-			subdir = *path
+		if *flags.path != "." {
+			subdir = *flags.path
 		}
-		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minScore, *minSize, *maxSize, *minSimilarity, *strategyName)
+		runCompare(baseRef, headRef, subdir, *flags.ext, *flags.exclude, *flags.minOccur, *flags.minScore, *flags.minSize, *flags.maxSize, *flags.minSimilarity, *flags.strategyName)
 		return
 	}
 
 	// Parse exclude patterns
 	var excludePatterns []string
-	if *exclude != "" {
-		for _, p := range strings.Split(*exclude, ",") {
+	if *flags.exclude != "" {
+		for _, p := range strings.Split(*flags.exclude, ",") {
 			p = strings.TrimSpace(p)
 			if p != "" {
 				excludePatterns = append(excludePatterns, p)
@@ -176,8 +156,8 @@ func main() {
 
 	// Build set of changed files if --git-diff is specified
 	changedFiles := make(map[string]bool)
-	if *gitDiff != "" {
-		cmd := exec.Command("git", "diff", "--name-only", *gitDiff)
+	if *flags.gitDiff != "" {
+		cmd := exec.Command("git", "diff", "--name-only", *flags.gitDiff)
 		output, err := cmd.Output()
 		if err == nil {
 			for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
@@ -190,13 +170,13 @@ func main() {
 
 	startTime := time.Now()
 
-	folder := *path
-	extension := *ext
+	folder := *flags.path
+	extension := *flags.ext
 	singleFile := ""
-	if *filePath != "" {
-		singleFile = *filePath
-	} else if info, err := os.Stat(*path); err == nil && !info.IsDir() {
-		singleFile = *path
+	if *flags.filePath != "" {
+		singleFile = *flags.filePath
+	} else if info, err := os.Stat(*flags.path); err == nil && !info.IsDir() {
+		singleFile = *flags.path
 	}
 	if singleFile != "" {
 		info, err := os.Stat(singleFile)
@@ -211,14 +191,14 @@ func main() {
 		folder = filepath.Dir(singleFile)
 		extension = filepath.Ext(singleFile)
 		if extension == "" {
-			extension = *ext
+			extension = *flags.ext
 		}
 	}
 	extension = strings.ToLower(extension)
 
 	// Auto-detect comment prefix from extension, allow override
-	if *comment != "" {
-		commentPrefix = *comment
+	if *flags.comment != "" {
+		commentPrefix = *flags.comment
 	} else if prefix, ok := commentPrefixes[extension]; ok {
 		commentPrefix = prefix
 	} else {
@@ -226,7 +206,7 @@ func main() {
 	}
 
 	// Load user-ignored hashes from ignore.json
-	userIgnored := LoadIgnoredHashes(folder, *strategyName)
+	userIgnored := LoadIgnoredHashes(folder, *flags.strategyName)
 	PrintIgnoredPatterns(len(userIgnored))
 
 	// First pass: count files
@@ -278,15 +258,15 @@ func main() {
 
 	parseStart := time.Now()
 	var cache *FileCache
-	if !*noCache {
-		cache = loadCache(folder, *strategyName)
+	if !*flags.noCache {
+		cache = loadCache(folder, *flags.strategyName)
 	}
 
 	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
 
 	// Save updated cache
-	if !*noCache && cacheMisses > 0 {
-		saveCache(folder, *strategyName, files, fileData)
+	if !*flags.noCache && cacheMisses > 0 {
+		saveCache(folder, *flags.strategyName, files, fileData)
 	}
 	parseTime := time.Since(parseStart)
 
@@ -301,51 +281,51 @@ func main() {
 	// Phase 2: Pattern detection with growth
 	detectStart := time.Now()
 	PrintDetectStart()
-	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize, *maxSize, *keepOverlaps)
+	patterns := detectPatterns(fileData, len(fileData), *flags.minOccur, *flags.minSize, *flags.maxSize, *flags.keepOverlaps)
 	detectTime := time.Since(detectStart)
 	PrintDetectComplete(detectTime)
 
 	// Filter and score matches
 	filterStart := time.Now()
 	matches, filterStats := FilterPatterns(patterns, FilterConfig{
-		MinOccur:      *minOccur,
-		MinScore:      *minScore,
-		MinSimilarity: *minSimilarity,
+		MinOccur:      *flags.minOccur,
+		MinScore:      *flags.minScore,
+		MinSimilarity: *flags.minSimilarity,
 		UserIgnored:   userIgnored,
 	})
 	filterTime := time.Since(filterStart)
 
 	// Report results
-	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowScore, filterStats.SkippedLowSimilarity, *minScore, *minSimilarity)
+	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowScore, filterStats.SkippedLowSimilarity, *flags.minScore, *flags.minSimilarity)
 
-	top := TopN(matches, *topN)
+	top := TopN(matches, *flags.topN)
 
-	if *githubAnnotations {
-		PrintGitHubAnnotations(top, len(top), *githubLevel, *gitDiff, changedFiles)
+	if *flags.githubAnnotations {
+		PrintGitHubAnnotations(top, len(top), *flags.githubLevel, *flags.gitDiff, changedFiles)
 	}
 
 	PrintHotspots(matches)
 
-	if *githubAnnotations {
+	if *flags.githubAnnotations {
 		elapsed := time.Since(startTime)
 		PrintTotalSummary(len(matches), len(fileData), totalLines, elapsed)
 		return
 	}
 
-	outputPath := filepath.Join(folder, ".quickdup", *strategyName+"-results.json")
+	outputPath := filepath.Join(folder, ".quickdup", *flags.strategyName+"-results.json")
 	if err := WriteJSONResults(matches, outputPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// If --select was provided, show detailed output from the JSON
-	if *selectRange != "" {
+	if *flags.selectRange != "" {
 		patterns, err := ReadJSONResults(outputPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading results: %v\n", err)
 			os.Exit(1)
 		}
-		skip, limit, err := parseSelectRange(*selectRange)
+		skip, limit, err := parseSelectRange(*flags.selectRange)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

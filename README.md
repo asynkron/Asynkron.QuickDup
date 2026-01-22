@@ -65,10 +65,10 @@ Patterns with similar structure but different actual code are filtered:
 
 1. Tokenize source lines of each occurrence
 2. Compute Jaccard similarity (intersection/union of token sets)
-3. Filter patterns below threshold (default: 50%)
-4. Score patterns: `uniqueWords + (similarity × 5)`
+3. Filter patterns below threshold (default: 75%)
+4. Score patterns: `max(uniqueWords - indentImbalance, 0) * adjustedSimilarity^3 + (patternLength / 20)`
 
-This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
+Where `adjustedSimilarity = max(similarity * 2 - 1, 0)`. This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) is heavily rewarded, surfacing the most actionable duplications first.
 
 ### Phase 4: Output
 
@@ -133,7 +133,7 @@ quickdup -path . -ext .go -debug
 | `-min`                | `2`                 | Minimum occurrences to report                                    |
 | `-min-size`           | `3`                 | Base pattern size (lines) to start growing from                  |
 | `-max-size`           | `0`                 | Maximum pattern size to grow to (0 = no limit)                   |
-| `-min-score`          | `5`                 | Minimum score (unique words + similarity bonus)                  |
+| `-min-score`          | `5`                 | Minimum score (effective words * adjusted similarity^3 + size bonus) |
 | `-min-similarity`     | `0.75`              | Minimum token similarity between occurrences (0.0-1.0)           |
 | `-top`                | `10`                | Show top N patterns by score                                     |
 | `-select`             |                     | Show detailed output for patterns (format: `skip..limit`)        |

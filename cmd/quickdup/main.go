@@ -116,8 +116,13 @@ func main() {
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
 	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
 	debug := flag.Bool("debug", false, "Print verbose progress for long-running phases")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	timeoutSeconds := flag.Int("timeout", 20, "Hard timeout in seconds (0 disables)")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("quickdup %s\n", resolveVersion())
+		return
+	}
 	debugEnabled = *debug
 	if *timeoutSeconds > 0 {
 		timeout := time.Duration(*timeoutSeconds) * time.Second

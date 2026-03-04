@@ -158,6 +158,17 @@ func (s *WordIndentStrategy) Score(entries []Entry, similarity float64) int {
 	return int(float64(effectiveWords)*simFactor) + len(entries)/20
 }
 
+func (s *WordIndentStrategy) Complexity(entries []Entry) int {
+	complexity := 0
+	for _, e := range entries {
+		entry := e.(*WordIndentEntry)
+		if entry.IndentDelta > 0 {
+			complexity++
+		}
+	}
+	return complexity
+}
+
 func (s *WordIndentStrategy) BlockedHashes() map[uint64]bool {
 	blocked := make(map[uint64]bool)
 

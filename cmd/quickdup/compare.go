@@ -11,7 +11,7 @@ import (
 )
 
 // runCompare compares duplicate patterns between two git commits
-func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScore, minSize, maxSize int, minSimilarity float64, strategyName string) {
+func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minRank, minSize, maxSize int, minSimilarity float64, strategyName string) {
 	fmt.Printf("Comparing duplicates: %s -> %s\n", baseRef, headRef)
 	if subdir != "" {
 		fmt.Printf("Subdirectory: %s\n", subdir)
@@ -54,7 +54,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minScor
 	args := []string{
 		"-ext", ext,
 		"-min", fmt.Sprintf("%d", minOccur),
-		"-min-score", fmt.Sprintf("%d", minScore),
+		"-min-rank", fmt.Sprintf("%d", minRank),
 		"-min-size", fmt.Sprintf("%d", minSize),
 		"-min-similarity", fmt.Sprintf("%f", minSimilarity),
 		"-strategy", strategyName,

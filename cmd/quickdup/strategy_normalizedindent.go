@@ -10,7 +10,7 @@ import (
 // IndentDelta is normalized to -1, 0, or +1
 type NormalizedIndentEntry struct {
 	LineNumber  int
-	IndentDelta int    // only -1, 0, or +1
+	IndentDelta int // only -1, 0, or +1
 	Word        string
 	SourceLine  string
 	hashBytes   []byte
@@ -128,6 +128,17 @@ func (s *NormalizedIndentStrategy) Score(entries []Entry, similarity float64) in
 	// 100%=1.0, 95%=0.73, 90%=0.51, 85%=0.34
 	simFactor := adjustedSim * adjustedSim * adjustedSim
 	return int(float64(effectiveWords)*simFactor) + len(entries)/20
+}
+
+func (s *NormalizedIndentStrategy) Complexity(entries []Entry) int {
+	complexity := 0
+	for _, e := range entries {
+		entry := e.(*NormalizedIndentEntry)
+		if entry.IndentDelta > 0 {
+			complexity++
+		}
+	}
+	return complexity
 }
 
 func (s *NormalizedIndentStrategy) BlockedHashes() map[uint64]bool {

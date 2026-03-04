@@ -101,14 +101,14 @@ func PrintDetectComplete(duration time.Duration) {
 }
 
 // PrintFilterComplete prints filtering completion and stats
-func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowScore, skippedLowSimilarity int, minScore int, minSimilarity float64) {
+func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowRank, skippedLowSimilarity int, minRank int, minSimilarity float64) {
 	fmt.Printf("Filtering took %s\n", duration.Round(time.Millisecond))
 
 	if skippedBlocked > 0 {
 		fmt.Printf("Filtered %d common patterns\n", skippedBlocked)
 	}
-	if skippedLowScore > 0 {
-		fmt.Printf("Filtered %d low-score patterns (score < %d)\n", skippedLowScore, minScore)
+	if skippedLowRank > 0 {
+		fmt.Printf("Filtered %d low-rank patterns (rank < %d)\n", skippedLowRank, minRank)
 	}
 	if skippedLowSimilarity > 0 {
 		fmt.Printf("Filtered %d low-similarity patterns (similarity < %.0f%%)\n", skippedLowSimilarity, minSimilarity*100)
@@ -137,8 +137,8 @@ func PrintGitHubAnnotations(matches []PatternMatch, top int, githubLevel string,
 		}
 		endLine := loc.LineStart + len(m.Pattern) - 1
 		msg := fmt.Sprintf("Duplicate code also at: %s", strings.Join(otherLocs, ", "))
-		fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, score %d)::%s\n",
-			githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Score, msg)
+		fmt.Printf("::%s file=%s,line=%d,endLine=%d,title=Duplicate (%d lines, %.0f%% similar, rank %d)::%s\n",
+			githubLevel, loc.Filename, loc.LineStart, endLine, len(m.Pattern), m.Similarity*100, m.Rank, msg)
 		annotationCount++
 	}
 	if annotationCount > 0 {
@@ -148,7 +148,7 @@ func PrintGitHubAnnotations(matches []PatternMatch, top int, githubLevel string,
 
 // PrintMatchSummary prints the summary of found patterns
 func PrintMatchSummary(matchCount, minOccur, top int) {
-	fmt.Printf("Found %s patterns with %d+ occurrences (showing top %d by score)\n\n",
+	fmt.Printf("Found %s patterns with %d+ occurrences (showing top %d by rank)\n\n",
 		theme.Summary.Render(fmt.Sprintf("%d", matchCount)), minOccur, top)
 }
 
@@ -158,7 +158,7 @@ func PrintMatches(matches []PatternMatch, top int) {
 		fmt.Printf("\n%s  %s  %s  %s  %s  %s\n",
 			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
 			theme.Hash.Render(fmt.Sprintf("[%016x]", m.Hash)),
-			theme.Score.Render(fmt.Sprintf("Score %d", m.Score)),
+			theme.Score.Render(fmt.Sprintf("Rank %d (S%d+C%d)", m.Rank, m.Score, m.Complexity)),
 			renderSimilarity(m.Similarity),
 			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
@@ -359,7 +359,7 @@ func PrintDetailedMatches(matches []PatternMatch, ext string) {
 			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
 			theme.Dim.Render(clusterInfo),
 			theme.Hash.Render(fmt.Sprintf("[%016x]", m.Hash)),
-			theme.Score.Render(fmt.Sprintf("Score %d", m.Score)),
+			theme.Score.Render(fmt.Sprintf("Rank %d (S%d+C%d)", m.Rank, m.Score, m.Complexity)),
 			renderSimilarity(m.Similarity),
 			theme.Dim.Render(fmt.Sprintf("%d lines", len(m.Pattern))),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", len(m.Locations))))
@@ -539,7 +539,7 @@ func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
 			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
 			theme.Dim.Render(clusterInfo),
 			theme.Hash.Render(fmt.Sprintf("[%s]", p.Hash)),
-			theme.Score.Render(fmt.Sprintf("Score %d", p.Score)),
+			theme.Score.Render(fmt.Sprintf("Rank %d (S%d+C%d)", p.Rank, p.Score, p.Complexity)),
 			renderSimilarity(p.Similarity),
 			theme.Dim.Render(fmt.Sprintf("%d lines", p.Lines)),
 			theme.Dim.Render(fmt.Sprintf("%d occurrences", p.Occurrences)))
@@ -649,6 +649,8 @@ func WriteJSONResults(matches []PatternMatch, outputPath string) error {
 		jsonOutput.Patterns = append(jsonOutput.Patterns, JSONPattern{
 			Hash:        fmt.Sprintf("%016x", m.Hash),
 			Score:       m.Score,
+			Complexity:  m.Complexity,
+			Rank:        m.Rank,
 			Lines:       len(m.Pattern),
 			Similarity:  m.Similarity,
 			Occurrences: len(m.Locations),

@@ -14,7 +14,9 @@ type PatternMatch struct {
 	Locations  []PatternLocation
 	Pattern    []Entry // representative pattern (first occurrence)
 	Similarity float64 // average token similarity across occurrences (0.0-1.0)
-	Score      int     // strategy-computed score
+	Score      int     // strategy-computed duplicate score
+	Complexity int     // per-block indentation complexity
+	Rank       int     // blended rank: score + complexity
 }
 
 // JSON output structures
@@ -27,6 +29,8 @@ type JSONLocation struct {
 type JSONPattern struct {
 	Hash        string         `json:"hash"`
 	Score       int            `json:"score"`
+	Complexity  int            `json:"complexity"`
+	Rank        int            `json:"rank"`
 	Lines       int            `json:"lines"`
 	Similarity  float64        `json:"similarity"`
 	Occurrences int            `json:"occurrences"`

@@ -13,7 +13,7 @@ import (
 // FilterConfig holds the configuration for filtering patterns
 type FilterConfig struct {
 	MinOccur      int
-	MinScore      int
+	MinRank       int
 	MinSimilarity float64
 	UserIgnored   map[uint64]bool // user-defined patterns to ignore
 }
@@ -21,7 +21,7 @@ type FilterConfig struct {
 // FilterStats holds statistics about filtered patterns
 type FilterStats struct {
 	SkippedBlocked       int
-	SkippedLowScore      int
+	SkippedLowRank       int
 	SkippedLowSimilarity int
 }
 
@@ -91,8 +91,10 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 			}
 
 			score := activeStrategy.Score(c.pattern, cluster.Similarity)
-			if score < config.MinScore {
-				stats.SkippedLowScore++
+			complexity := activeStrategy.Complexity(c.pattern)
+			rank := score + complexity
+			if rank < config.MinRank {
+				stats.SkippedLowRank++
 				continue
 			}
 
@@ -102,14 +104,16 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 				Pattern:    cluster.Locations[0].Pattern,
 				Similarity: cluster.Similarity,
 				Score:      score,
+				Complexity: complexity,
+				Rank:       rank,
 			})
 		}
 	}
 
-	// Sort by score descending, then by hash for deterministic order
+	// Sort by rank descending, then by hash for deterministic order
 	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].Score != matches[j].Score {
-			return matches[i].Score > matches[j].Score
+		if matches[i].Rank != matches[j].Rank {
+			return matches[i].Rank > matches[j].Rank
 		}
 		return matches[i].Hash < matches[j].Hash
 	})

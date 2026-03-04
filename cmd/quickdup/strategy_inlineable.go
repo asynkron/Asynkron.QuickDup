@@ -117,6 +117,11 @@ func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
 	return 50 + int(adjustedSim*50)
 }
 
+func (s *InlineableStrategy) Complexity(entries []Entry) int {
+	_ = entries
+	return 0
+}
+
 func (s *InlineableStrategy) BlockedHashes() map[uint64]bool {
 	// No blocked patterns for inlineable strategy
 	return make(map[uint64]bool)

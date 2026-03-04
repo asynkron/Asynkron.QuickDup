@@ -43,28 +43,28 @@ var commentPrefixes = map[string]string{
 	".v":     "//",
 	".zig":   "//",
 	// Hash-style
-	".py":     "#",
-	".rb":     "#",
-	".sh":     "#",
-	".bash":   "#",
-	".zsh":    "#",
-	".pl":     "#",
-	".pm":     "#",
-	".r":      "#",
-	".R":      "#",
-	".yaml":   "#",
-	".yml":    "#",
-	".toml":   "#",
-	".tf":     "#",
-	".cmake":  "#",
-	".make":   "#",
-	".mk":     "#",
-	".ps1":    "#",
-	".nim":    "#",
-	".jl":     "#",
-	".ex":     "#",
-	".exs":    "#",
-	".cr":     "#",
+	".py":    "#",
+	".rb":    "#",
+	".sh":    "#",
+	".bash":  "#",
+	".zsh":   "#",
+	".pl":    "#",
+	".pm":    "#",
+	".r":     "#",
+	".R":     "#",
+	".yaml":  "#",
+	".yml":   "#",
+	".toml":  "#",
+	".tf":    "#",
+	".cmake": "#",
+	".make":  "#",
+	".mk":    "#",
+	".ps1":   "#",
+	".nim":   "#",
+	".jl":    "#",
+	".ex":    "#",
+	".exs":   "#",
+	".cr":    "#",
 	// Double-dash style
 	".sql":  "--",
 	".lua":  "--",
@@ -100,11 +100,11 @@ func main() {
 	filePath := flag.String("file", "", "Scan a single file (overrides --path)")
 	ext := flag.String("ext", ".go", "File extension to scan")
 	minOccur := flag.Int("min", 2, "Minimum occurrences to report")
-	minScore := flag.Int("min-score", 5, "Minimum score to report (uniqueWords × adjusted similarity)")
+	minRank := flag.Int("min-rank", 5, "Minimum blended rank to report (score + complexity)")
 	minSize := flag.Int("min-size", 3, "Base pattern size to start growing from")
 	maxSize := flag.Int("max-size", 0, "Maximum pattern size to grow to (0 = no limit)")
 	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
-	topN := flag.Int("top", 10, "Show top N matches by pattern length")
+	topN := flag.Int("top", 10, "Show top N matches by blended rank")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
 	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
@@ -159,7 +159,7 @@ func main() {
 		if *path != "." {
 			subdir = *path
 		}
-		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minScore, *minSize, *maxSize, *minSimilarity, *strategyName)
+		runCompare(baseRef, headRef, subdir, *ext, *exclude, *minOccur, *minRank, *minSize, *maxSize, *minSimilarity, *strategyName)
 		return
 	}
 
@@ -309,14 +309,14 @@ func main() {
 	filterStart := time.Now()
 	matches, filterStats := FilterPatterns(patterns, FilterConfig{
 		MinOccur:      *minOccur,
-		MinScore:      *minScore,
+		MinRank:       *minRank,
 		MinSimilarity: *minSimilarity,
 		UserIgnored:   userIgnored,
 	})
 	filterTime := time.Since(filterStart)
 
 	// Report results
-	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowScore, filterStats.SkippedLowSimilarity, *minScore, *minSimilarity)
+	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowRank, filterStats.SkippedLowSimilarity, *minRank, *minSimilarity)
 
 	top := TopN(matches, *topN)
 

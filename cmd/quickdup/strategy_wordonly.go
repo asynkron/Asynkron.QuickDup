@@ -88,6 +88,11 @@ func (s *WordOnlyStrategy) Score(entries []Entry, similarity float64) int {
 	return int(float64(uniqueWords)*simFactor) + len(entries)/20
 }
 
+func (s *WordOnlyStrategy) Complexity(entries []Entry) int {
+	_ = entries
+	return 0
+}
+
 func (s *WordOnlyStrategy) BlockedHashes() map[uint64]bool {
 	blocked := make(map[uint64]bool)
 

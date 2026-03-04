@@ -66,7 +66,8 @@ Patterns with similar structure but different actual code are filtered:
 1. Tokenize source lines of each occurrence
 2. Compute Jaccard similarity (intersection/union of token sets)
 3. Filter patterns below threshold (default: 50%)
-4. Score patterns: `uniqueWords + (similarity × 5)`
+4. Compute duplicate score and indentation complexity per pattern block
+5. Blend rank: `rank = score + complexity`
 
 This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
 
@@ -133,9 +134,9 @@ quickdup -path . -ext .go -debug
 | `-min`                | `2`                 | Minimum occurrences to report                                    |
 | `-min-size`           | `3`                 | Base pattern size (lines) to start growing from                  |
 | `-max-size`           | `0`                 | Maximum pattern size to grow to (0 = no limit)                   |
-| `-min-score`          | `5`                 | Minimum score (unique words + similarity bonus)                  |
+| `-min-rank`           | `5`                 | Minimum blended rank (`score + complexity`)                      |
 | `-min-similarity`     | `0.75`              | Minimum token similarity between occurrences (0.0-1.0)           |
-| `-top`                | `10`                | Show top N patterns by score                                     |
+| `-top`                | `10`                | Show top N patterns by blended rank                              |
 | `-select`             |                     | Show detailed output for patterns (format: `skip..limit`)        |
 | `-strategy`           | `normalized-indent` | Detection strategy (see below)                                   |
 | `-comment`            | auto                | Override comment prefix (auto-detected by extension)             |
@@ -236,7 +237,7 @@ Results written to: .quickdup/normalized-indent-results.json
 With `--select 0..3`:
 
 ```
-Pattern 1  [a1b2c3d4e5f67890]  Score 19  100% similar  47 lines  2 occurrences
+Pattern 1  [a1b2c3d4e5f67890]  Rank 19 (S16+C3)  100% similar  47 lines  2 occurrences
 
   Occurrence 1 src/services/auth.go:142
     // ... code block with syntax highlighting ...

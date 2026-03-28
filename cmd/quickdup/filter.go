@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -142,21 +144,37 @@ func LoadIgnoredHashes(dir string, strategyName string) map[uint64]bool {
 				os.WriteFile(ignorePath, jsonData, 0644)
 			}
 		}
-		return nil
+		return map[uint64]bool{}
 	}
 
 	var ignoreFile IgnoreFile
 	if err := json.Unmarshal(data, &ignoreFile); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", ignorePath, err)
-		return nil
+		return map[uint64]bool{}
 	}
 
 	ignored := make(map[uint64]bool)
 	for _, hashStr := range ignoreFile.Ignored {
-		var hash uint64
-		if _, err := fmt.Sscanf(hashStr, "%x", &hash); err == nil {
+		if hash, ok := parseIgnoredHash(hashStr); ok {
 			ignored[hash] = true
 		}
 	}
 	return ignored
+}
+
+func parseIgnoredHash(hashStr string) (uint64, bool) {
+	s := strings.TrimSpace(hashStr)
+	s = strings.TrimPrefix(s, "[")
+	s = strings.TrimSuffix(s, "]")
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.ToLower(s), "0x")
+	if s == "" {
+		return 0, false
+	}
+
+	hash, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
+		return 0, false
+	}
+	return hash, true
 }

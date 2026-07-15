@@ -1,7 +1,6 @@
-package main
+package quickdup
 
 import (
-	"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -45,7 +44,11 @@ func filterOverlappingOccurrences(locs []PatternLocation, patternLen int) []Patt
 	return result
 }
 
-func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int, maxSize int, keepOverlaps bool) map[uint64][]PatternLocation {
+// DetectPatterns grows minSize-line base patterns into the largest repeated
+// windows that still occur at least minOccur times, up to maxSize (0 = no
+// limit). Progress is reported through ProgressOutput; "[debug]" lines are
+// additionally gated by Debug.
+func DetectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, minSize int, maxSize int, keepOverlaps bool) map[uint64][]PatternLocation {
 	allPatterns := make(map[uint64][]PatternLocation)
 	numWorkers := runtime.NumCPU()
 
@@ -57,8 +60,8 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 
 	// Step 1: Generate base patterns in parallel (per file)
 	basePatterns := generateBasePatternsParallel(fileData, files, minSize, numWorkers)
-	if debugEnabled {
-		fmt.Printf("[debug] base patterns: %d (minOccur=%d)\n", len(basePatterns), minOccur)
+	if Debug {
+		progressf("[debug] base patterns: %d (minOccur=%d)\n", len(basePatterns), minOccur)
 	}
 
 	// Step 2: Filter base patterns to >= minOccur
@@ -74,8 +77,8 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 	currentLen := minSize
 	for len(survivors) > 0 && (maxSize == 0 || currentLen < maxSize) {
 		currentLen++
-		if debugEnabled {
-			fmt.Printf("[debug] grow to len=%d from survivors=%d occurrences=%d\n", currentLen, len(survivors), countLocations(survivors))
+		if Debug {
+			progressf("[debug] grow to len=%d from survivors=%d occurrences=%d\n", currentLen, len(survivors), countLocations(survivors))
 		}
 
 		// Extend all locations in parallel
@@ -92,8 +95,8 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 				}
 			}
 		}
-		if debugEnabled {
-			fmt.Printf("[debug] survivors at len=%d: %d\n", currentLen, len(survivors))
+		if Debug {
+			progressf("[debug] survivors at len=%d: %d\n", currentLen, len(survivors))
 		}
 
 		// Add previous generation to results, filtering out occurrences that grew
@@ -127,9 +130,9 @@ func detectPatterns(fileData map[string][]Entry, totalFiles int, minOccur int, m
 				allPatterns[hash] = filteredLocs
 			}
 		}
-		fmt.Printf("Growth stopped at %d lines (max-size)\n", currentLen)
+		progressf("Growth stopped at %d lines (max-size)\n", currentLen)
 	} else {
-		fmt.Printf("Growth stopped at %d lines\n", currentLen-1)
+		progressf("Growth stopped at %d lines\n", currentLen-1)
 	}
 	return allPatterns
 }
@@ -166,7 +169,7 @@ func generateBasePatternsParallel(fileData map[string][]Entry, files []string, m
 
 				for i := 0; i <= n-minSize; i++ {
 					window := entries[i : i+minSize]
-					hash := activeStrategy.Hash(window)
+					hash := ActiveStrategy.Hash(window)
 					patternCopy := make([]Entry, len(window))
 					copy(patternCopy, window)
 
@@ -236,7 +239,7 @@ func extendPatternsParallel(survivors map[uint64][]PatternLocation, fileData map
 				}
 
 				window := entries[loc.EntryIndex:endIdx]
-				hash := activeStrategy.Hash(window)
+				hash := ActiveStrategy.Hash(window)
 				patternCopy := make([]Entry, len(window))
 				copy(patternCopy, window)
 

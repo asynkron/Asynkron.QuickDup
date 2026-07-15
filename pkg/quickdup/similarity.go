@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 import "strings"
 
@@ -104,34 +104,6 @@ func tokenSimilarity(a, b []string) float64 {
 		return 0
 	}
 	return float64(intersection) / float64(union)
-}
-
-// computeAverageTokenSimilarity computes the average pairwise token similarity across all occurrences
-func computeAverageTokenSimilarity(locations []PatternLocation) float64 {
-	if len(locations) < 2 {
-		return 1.0 // Single occurrence = 100% similar to itself
-	}
-
-	// Tokenize all patterns
-	tokenized := make([][]string, len(locations))
-	for i, loc := range locations {
-		tokenized[i] = tokenizePattern(loc.Pattern)
-	}
-
-	// Compute average pairwise similarity
-	totalSim := 0.0
-	pairs := 0
-	for i := 0; i < len(tokenized); i++ {
-		for j := i + 1; j < len(tokenized); j++ {
-			totalSim += tokenSimilarity(tokenized[i], tokenized[j])
-			pairs++
-		}
-	}
-
-	if pairs == 0 {
-		return 1.0
-	}
-	return totalSim / float64(pairs)
 }
 
 // ClusterResult holds a cluster of similar locations and their average similarity

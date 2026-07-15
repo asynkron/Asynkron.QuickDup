@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 import (
 	"encoding/json"
@@ -31,7 +31,7 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 	var stats FilterStats
 
 	// Get blocked hashes from strategy
-	blockedHashes := activeStrategy.BlockedHashes()
+	blockedHashes := ActiveStrategy.BlockedHashes()
 
 	// First pass: filter blocked patterns and collect candidates
 	type candidate struct {
@@ -90,8 +90,8 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 				continue
 			}
 
-			score := activeStrategy.Score(c.pattern, cluster.Similarity)
-			complexity := activeStrategy.Complexity(c.pattern)
+			score := ActiveStrategy.Score(c.pattern, cluster.Similarity)
+			complexity := ActiveStrategy.Complexity(c.pattern)
 			rank := score + complexity
 			if rank < config.MinRank {
 				stats.SkippedLowRank++
@@ -138,8 +138,9 @@ func LoadIgnoredHashes(dir string, strategyName string) map[uint64]bool {
 		if os.IsNotExist(err) {
 			emptyIgnore := IgnoreFile{Ignored: []string{}}
 			if jsonData, err := json.MarshalIndent(emptyIgnore, "", "  "); err == nil {
-				os.MkdirAll(filepath.Join(dir, ".quickdup"), 0755)
-				os.WriteFile(ignorePath, jsonData, 0644)
+				if mkErr := os.MkdirAll(filepath.Join(dir, ".quickdup"), 0755); mkErr == nil {
+					os.WriteFile(ignorePath, jsonData, 0644)
+				}
 			}
 		}
 		return nil

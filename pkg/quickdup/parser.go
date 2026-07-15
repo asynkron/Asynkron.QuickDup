@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 import (
 	"os"
@@ -12,11 +12,11 @@ const separators = " \t:.;{}()[]#!<>=,\n\r"
 // skipFirstWords defines first-word tokens to skip by file extension
 var skipFirstWords = map[string]map[string]bool{
 	".cs": {
-		"using":  true,
-		"#":      true, // #region, #endregion, #pragma, etc.
+		"using": true,
+		"#":     true, // #region, #endregion, #pragma, etc.
 	},
 	".go": {
-		"import": true,
+		"import":  true,
 		"package": true,
 	},
 	".java": {
@@ -69,7 +69,7 @@ func parseFile(path string) ([]Entry, error) {
 	// Set current file extension for skip word checking
 	currentFileExt = strings.ToLower(filepath.Ext(path))
 
-	content := activeStrategy.Preparse(string(data))
+	content := ActiveStrategy.Preparse(string(data))
 	lines := strings.Split(content, "\n")
 
 	var entries []Entry
@@ -78,7 +78,7 @@ func parseFile(path string) ([]Entry, error) {
 	for lineNumber, line := range lines {
 		lineNumber++ // 1-based line numbers
 
-		entry, skip := activeStrategy.ParseLine(lineNumber, line, prevEntry)
+		entry, skip := ActiveStrategy.ParseLine(lineNumber, line, prevEntry)
 		if skip {
 			continue
 		}
@@ -100,11 +100,11 @@ func isWhitespaceOnly(line string) bool {
 }
 
 func isCommentOnly(line string) bool {
-	if commentPrefix == "" {
+	if CommentPrefix == "" {
 		return false
 	}
 	trimmed := strings.TrimLeft(line, " \t")
-	return strings.HasPrefix(trimmed, commentPrefix)
+	return strings.HasPrefix(trimmed, CommentPrefix)
 }
 
 // shouldSkipByFirstWord checks if the line should be skipped based on its first word
@@ -160,4 +160,3 @@ func extractFirstWord(line string) string {
 
 	return trimmed[:end]
 }
-

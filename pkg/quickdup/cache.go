@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 import (
 	"encoding/gob"
@@ -23,7 +23,10 @@ type FileCache struct {
 
 const cacheVersion = 1
 
-func loadCache(dir string, strategyName string) *FileCache {
+// LoadCache loads the on-disk file cache for strategyName, or nil if absent,
+// stale, or the strategy isn't cacheable (only word-indent is, since it's
+// the only Entry type currently registered with encoding/gob).
+func LoadCache(dir string, strategyName string) *FileCache {
 	// Cache only works with word-indent strategy (uses WordIndentEntry)
 	if strategyName != "word-indent" {
 		return nil
@@ -50,8 +53,8 @@ func loadCache(dir string, strategyName string) *FileCache {
 	return &cache
 }
 
-// saveCache saves the file cache to disk
-func saveCache(dir string, strategyName string, files []string, fileData map[string][]Entry) {
+// SaveCache saves the file cache to disk
+func SaveCache(dir string, strategyName string, files []string, fileData map[string][]Entry) {
 	// Cache only works with word-indent strategy (uses WordIndentEntry)
 	if strategyName != "word-indent" {
 		return
@@ -98,8 +101,8 @@ func saveCache(dir string, strategyName string, files []string, fileData map[str
 	encoder.Encode(cache)
 }
 
-// parseFilesWithCache parses files using cache when possible
-func parseFilesWithCache(files []string, cache *FileCache) (map[string][]Entry, int, int) {
+// ParseFilesWithCache parses files using cache when possible
+func ParseFilesWithCache(files []string, cache *FileCache) (map[string][]Entry, int, int) {
 	numWorkers := runtime.NumCPU()
 	results := make(map[string][]Entry)
 	var mu sync.Mutex

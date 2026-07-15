@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 // Strategy defines how patterns are detected and scored
 type Strategy interface {

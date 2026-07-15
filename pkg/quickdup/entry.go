@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 // Entry represents a parsed line for pattern detection
 type Entry interface {

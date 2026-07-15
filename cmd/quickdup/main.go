@@ -9,11 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
-)
 
-// Active strategy (set from --strategy flag)
-var activeStrategy Strategy
-var debugEnabled bool
+	"github.com/asynkron/Asynkron.QuickDup/pkg/quickdup"
+)
 
 // Default comment prefixes by file extension
 var commentPrefixes = map[string]string{
@@ -93,8 +91,6 @@ var commentPrefixes = map[string]string{
 	".vbs": "'",
 }
 
-var commentPrefix string
-
 func main() {
 	path := flag.String("path", ".", "Path to scan")
 	filePath := flag.String("file", "", "Scan a single file (overrides --path)")
@@ -118,7 +114,8 @@ func main() {
 	debug := flag.Bool("debug", false, "Print verbose progress for long-running phases")
 	timeoutSeconds := flag.Int("timeout", 20, "Hard timeout in seconds (0 disables)")
 	flag.Parse()
-	debugEnabled = *debug
+	quickdup.Debug = *debug
+	quickdup.ProgressOutput = os.Stdout
 	if *timeoutSeconds > 0 {
 		timeout := time.Duration(*timeoutSeconds) * time.Second
 		go func() {
@@ -133,14 +130,14 @@ func main() {
 	}
 
 	// Select strategy
-	strategies := map[string]Strategy{
-		"word-indent":       &WordIndentStrategy{},
-		"normalized-indent": &NormalizedIndentStrategy{},
-		"word-only":         &WordOnlyStrategy{},
-		"inlineable":        &InlineableStrategy{},
+	strategies := map[string]quickdup.Strategy{
+		"word-indent":       &quickdup.WordIndentStrategy{},
+		"normalized-indent": &quickdup.NormalizedIndentStrategy{},
+		"word-only":         &quickdup.WordOnlyStrategy{},
+		"inlineable":        &quickdup.InlineableStrategy{},
 	}
 	if s, ok := strategies[*strategyName]; ok {
-		activeStrategy = s
+		quickdup.ActiveStrategy = s
 	} else {
 		fmt.Fprintf(os.Stderr, "Unknown strategy: %s\n", *strategyName)
 		os.Exit(1)
@@ -218,15 +215,15 @@ func main() {
 
 	// Auto-detect comment prefix from extension, allow override
 	if *comment != "" {
-		commentPrefix = *comment
+		quickdup.CommentPrefix = *comment
 	} else if prefix, ok := commentPrefixes[extension]; ok {
-		commentPrefix = prefix
+		quickdup.CommentPrefix = prefix
 	} else {
-		commentPrefix = "//" // fallback default
+		quickdup.CommentPrefix = "//" // fallback default
 	}
 
 	// Load user-ignored hashes from ignore.json
-	userIgnored := LoadIgnoredHashes(folder, *strategyName)
+	userIgnored := quickdup.LoadIgnoredHashes(folder, *strategyName)
 	PrintIgnoredPatterns(len(userIgnored))
 
 	// First pass: count files
@@ -277,16 +274,16 @@ func main() {
 	PrintScanStart(totalFiles, runtime.NumCPU())
 
 	parseStart := time.Now()
-	var cache *FileCache
+	var cache *quickdup.FileCache
 	if !*noCache {
-		cache = loadCache(folder, *strategyName)
+		cache = quickdup.LoadCache(folder, *strategyName)
 	}
 
-	fileData, cacheHits, cacheMisses := parseFilesWithCache(files, cache)
+	fileData, cacheHits, cacheMisses := quickdup.ParseFilesWithCache(files, cache)
 
 	// Save updated cache
 	if !*noCache && cacheMisses > 0 {
-		saveCache(folder, *strategyName, files, fileData)
+		quickdup.SaveCache(folder, *strategyName, files, fileData)
 	}
 	parseTime := time.Since(parseStart)
 
@@ -301,13 +298,13 @@ func main() {
 	// Phase 2: Pattern detection with growth
 	detectStart := time.Now()
 	PrintDetectStart()
-	patterns := detectPatterns(fileData, len(fileData), *minOccur, *minSize, *maxSize, *keepOverlaps)
+	patterns := quickdup.DetectPatterns(fileData, len(fileData), *minOccur, *minSize, *maxSize, *keepOverlaps)
 	detectTime := time.Since(detectStart)
 	PrintDetectComplete(detectTime)
 
 	// Filter and score matches
 	filterStart := time.Now()
-	matches, filterStats := FilterPatterns(patterns, FilterConfig{
+	matches, filterStats := quickdup.FilterPatterns(patterns, quickdup.FilterConfig{
 		MinOccur:      *minOccur,
 		MinRank:       *minRank,
 		MinSimilarity: *minSimilarity,
@@ -318,7 +315,7 @@ func main() {
 	// Report results
 	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowRank, filterStats.SkippedLowSimilarity, *minRank, *minSimilarity)
 
-	top := TopN(matches, *topN)
+	top := quickdup.TopN(matches, *topN)
 
 	if *githubAnnotations {
 		PrintGitHubAnnotations(top, len(top), *githubLevel, *gitDiff, changedFiles)
@@ -379,7 +376,7 @@ func parseSelectRange(s string) (skip, limit int, err error) {
 }
 
 // selectMatches returns a slice of matches starting at skip with at most limit items
-func selectMatches(matches []PatternMatch, skip, limit int) []PatternMatch {
+func selectMatches(matches []quickdup.PatternMatch, skip, limit int) []quickdup.PatternMatch {
 	if skip >= len(matches) {
 		return nil
 	}
@@ -391,7 +388,7 @@ func selectMatches(matches []PatternMatch, skip, limit int) []PatternMatch {
 }
 
 // selectJSONPatterns returns a slice of JSON patterns starting at skip with at most limit items
-func selectJSONPatterns(patterns []JSONPattern, skip, limit int) []JSONPattern {
+func selectJSONPatterns(patterns []quickdup.JSONPattern, skip, limit int) []quickdup.JSONPattern {
 	if skip >= len(patterns) {
 		return nil
 	}

@@ -1,25 +1,17 @@
-package main
-
-import (
-	"hash/fnv"
-	"strings"
-)
+package quickdup
 
 // InlineableEntry is the Entry implementation for inlineable strategy
-type InlineableEntry struct {
-	LineNumber int
-	Word       string
-	SourceLine string
-	hashBytes  []byte
-}
-
-func (e *InlineableEntry) GetLineNumber() int { return e.LineNumber }
-func (e *InlineableEntry) GetRaw() string     { return e.SourceLine }
-func (e *InlineableEntry) HashBytes() []byte  { return e.hashBytes }
+type InlineableEntry = FirstWordEntry
 
 // InlineableStrategy finds duplicate one-liner methods that could be inlined
 // Looks for patterns like: public/private/internal/protected ... { return ... }
-type InlineableStrategy struct{}
+type InlineableStrategy struct {
+	firstWordStrategy
+}
+
+func (s *InlineableStrategy) Name() string {
+	return "inlineable"
+}
 
 // Access modifiers that start inlineable methods
 var accessModifiers = map[string]bool{
@@ -27,48 +19,6 @@ var accessModifiers = map[string]bool{
 	"private":   true,
 	"internal":  true,
 	"protected": true,
-}
-
-func (s *InlineableStrategy) Name() string {
-	return "inlineable"
-}
-
-func (s *InlineableStrategy) Preparse(content string) string {
-	return cStyleStripper.Preparse(content)
-}
-
-func (s *InlineableStrategy) ParseLine(lineNum int, line string, prevEntry Entry) (Entry, bool) {
-	if isWhitespaceOnly(line) || isCommentOnly(line) || shouldSkipByFirstWord(line) {
-		return nil, true // skip
-	}
-
-	word := extractFirstWord(line)
-	hashBytes := []byte(word + "\n")
-
-	entry := &InlineableEntry{
-		LineNumber: lineNum,
-		Word:       word,
-		SourceLine: line,
-		hashBytes:  hashBytes,
-	}
-	return entry, false
-}
-
-func (s *InlineableStrategy) Hash(entries []Entry) uint64 {
-	h := fnv.New64a()
-	for _, e := range entries {
-		h.Write(e.HashBytes())
-	}
-	return h.Sum64()
-}
-
-func (s *InlineableStrategy) Signature(entries []Entry) string {
-	var parts []string
-	for _, e := range entries {
-		entry := e.(*InlineableEntry)
-		parts = append(parts, entry.Word)
-	}
-	return strings.Join(parts, " ")
 }
 
 func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
@@ -80,7 +30,7 @@ func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
 	// Extract words
 	words := make([]string, len(entries))
 	for i, e := range entries {
-		entry := e.(*InlineableEntry)
+		entry := e.(*FirstWordEntry)
 		words[i] = entry.Word
 	}
 
@@ -115,11 +65,6 @@ func (s *InlineableStrategy) Score(entries []Entry, similarity float64) int {
 	}
 
 	return 50 + int(adjustedSim*50)
-}
-
-func (s *InlineableStrategy) Complexity(entries []Entry) int {
-	_ = entries
-	return 0
 }
 
 func (s *InlineableStrategy) BlockedHashes() map[uint64]bool {

@@ -1,4 +1,4 @@
-package main
+package quickdup
 
 // PatternLocation represents a location where a pattern was found
 type PatternLocation struct {

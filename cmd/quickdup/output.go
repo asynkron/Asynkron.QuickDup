@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asynkron/Asynkron.QuickDup/pkg/quickdup"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -123,7 +124,7 @@ func PrintIgnoredPatterns(count int) {
 }
 
 // PrintGitHubAnnotations outputs GitHub Actions annotations for matches
-func PrintGitHubAnnotations(matches []PatternMatch, top int, githubLevel string, gitDiff string, changedFiles map[string]bool) {
+func PrintGitHubAnnotations(matches []quickdup.PatternMatch, top int, githubLevel string, gitDiff string, changedFiles map[string]bool) {
 	annotationCount := 0
 	for _, m := range matches[:top] {
 		loc := m.Locations[0]
@@ -153,7 +154,7 @@ func PrintMatchSummary(matchCount, minOccur, top int) {
 }
 
 // PrintMatches prints the top matches with their locations
-func PrintMatches(matches []PatternMatch, top int) {
+func PrintMatches(matches []quickdup.PatternMatch, top int) {
 	for i, m := range matches[:top] {
 		fmt.Printf("\n%s  %s  %s  %s  %s  %s\n",
 			theme.Summary.Render(fmt.Sprintf("Pattern %d", i+1)),
@@ -172,7 +173,7 @@ func PrintMatches(matches []PatternMatch, top int) {
 }
 
 // PrintHotspots prints the duplication hotspots
-func PrintHotspots(matches []PatternMatch) {
+func PrintHotspots(matches []quickdup.PatternMatch) {
 	// Count duplicated lines per file
 	fileDupLines := make(map[string]int)
 	for _, m := range matches {
@@ -279,7 +280,7 @@ var langFromExt = map[string]string{
 }
 
 // normalizeIndent removes common leading whitespace from lines
-func normalizeIndent(entries []Entry) []string {
+func normalizeIndent(entries []quickdup.Entry) []string {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -331,7 +332,7 @@ func normalizeIndent(entries []Entry) []string {
 }
 
 // PrintDetailedMatches prints detailed pattern matches with source code using glow
-func PrintDetailedMatches(matches []PatternMatch, ext string) {
+func PrintDetailedMatches(matches []quickdup.PatternMatch, ext string) {
 	lang := langFromExt[ext]
 	if lang == "" {
 		lang = strings.TrimPrefix(ext, ".")
@@ -496,13 +497,13 @@ func renderWithGlow(markdown string) {
 }
 
 // ReadJSONResults reads results from a JSON file
-func ReadJSONResults(path string) ([]JSONPattern, error) {
+func ReadJSONResults(path string) ([]quickdup.JSONPattern, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var output JSONOutput
+	var output quickdup.JSONOutput
 	if err := json.Unmarshal(data, &output); err != nil {
 		return nil, err
 	}
@@ -511,7 +512,7 @@ func ReadJSONResults(path string) ([]JSONPattern, error) {
 }
 
 // PrintDetailedMatchesFromJSON prints detailed pattern matches from JSON results
-func PrintDetailedMatchesFromJSON(patterns []JSONPattern, ext string) {
+func PrintDetailedMatchesFromJSON(patterns []quickdup.JSONPattern, ext string) {
 	lang := langFromExt[ext]
 	if lang == "" {
 		lang = strings.TrimPrefix(ext, ".")
@@ -631,22 +632,22 @@ func readSourceLines(filename string, startLine, count int) []string {
 }
 
 // WriteJSONResults writes the results to a JSON file
-func WriteJSONResults(matches []PatternMatch, outputPath string) error {
-	jsonOutput := JSONOutput{
+func WriteJSONResults(matches []quickdup.PatternMatch, outputPath string) error {
+	jsonOutput := quickdup.JSONOutput{
 		TotalPatterns: len(matches),
-		Patterns:      make([]JSONPattern, 0, len(matches)),
+		Patterns:      make([]quickdup.JSONPattern, 0, len(matches)),
 	}
 
 	for _, m := range matches {
-		locs := make([]JSONLocation, len(m.Locations))
+		locs := make([]quickdup.JSONLocation, len(m.Locations))
 		for i, loc := range m.Locations {
-			locs[i] = JSONLocation{
+			locs[i] = quickdup.JSONLocation{
 				Filename:  loc.Filename,
 				LineStart: loc.LineStart,
 			}
 		}
 
-		jsonOutput.Patterns = append(jsonOutput.Patterns, JSONPattern{
+		jsonOutput.Patterns = append(jsonOutput.Patterns, quickdup.JSONPattern{
 			Hash:        fmt.Sprintf("%016x", m.Hash),
 			Score:       m.Score,
 			Complexity:  m.Complexity,

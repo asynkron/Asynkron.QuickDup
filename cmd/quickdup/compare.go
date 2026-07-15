@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/asynkron/Asynkron.QuickDup/pkg/quickdup"
 )
 
 // runCompare compares duplicate patterns between two git commits
@@ -106,7 +108,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minRank
 	}
 
 	headOccur := make(map[string]int)
-	headPatterns := make(map[string]JSONPattern)
+	headPatterns := make(map[string]quickdup.JSONPattern)
 	for _, p := range headResults.Patterns {
 		headOccur[p.Hash] = p.Occurrences
 		headPatterns[p.Hash] = p
@@ -122,7 +124,7 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minRank
 		baseCount int
 		headCount int
 		removed   int
-		pattern   JSONPattern
+		pattern   quickdup.JSONPattern
 	}
 	var lingeringPatterns []lingering
 
@@ -187,12 +189,12 @@ func runCompare(baseRef, headRef, subdir, ext, exclude string, minOccur, minRank
 	}
 }
 
-func loadJSONResults(path string) JSONOutput {
+func loadJSONResults(path string) quickdup.JSONOutput {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return JSONOutput{}
+		return quickdup.JSONOutput{}
 	}
-	var output JSONOutput
+	var output quickdup.JSONOutput
 	json.Unmarshal(data, &output)
 	return output
 }

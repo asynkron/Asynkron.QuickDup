@@ -65,16 +65,25 @@ Patterns with similar structure but different actual code are filtered:
 
 1. Tokenize source lines of each occurrence
 2. Compute Jaccard similarity (intersection/union of token sets)
-3. Filter patterns below threshold (default: 50%)
-4. Compute duplicate score and indentation complexity per pattern block
-5. Blend rank: `rank = score + complexity`
+3. Filter patterns below threshold (default: 75%)
+4. Compute a strategy-specific duplicate score
+5. For indent strategies, count entries with a positive indentation delta as complexity
+6. Blend rank: `rank = score + complexity`
 
-This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) boosts the score, surfacing the most actionable duplications first.
+For `word-indent` and `normalized-indent`, the score is
+`floor(effectiveWords * max(2 * similarity - 1, 0)^3) + floor(patternLength / 20)`.
+`effectiveWords` is the number of unique first words after subtracting unmatched
+opening and closing indentation. `word-only` uses the same similarity curve and
+length bonus without the indentation penalty. `inlineable` uses its own 50-100
+score for recognized 3-5 line method shapes. Rank is separate from score: it
+adds the positive-indentation complexity described above.
+
+This eliminates most false positives like "all error handlers look similar structurally but have different messages." High similarity (especially 100% verbatim matches) is heavily rewarded, surfacing the most actionable duplications first.
 
 ### Phase 4: Output
 
 Results written to `.quickdup/` directory:
-- `results.json` — Machine-readable patterns with locations
+- `<strategy>-results.json` — Machine-readable patterns with locations, for example `normalized-indent-results.json`
 
 ## Installation
 
@@ -141,13 +150,14 @@ quickdup -path . -ext .go -debug
 | `-strategy`           | `normalized-indent` | Detection strategy (see below)                                   |
 | `-comment`            | auto                | Override comment prefix (auto-detected by extension)             |
 | `-exclude`            |                     | Exclude files matching patterns (comma-separated globs)          |
-| `-no-cache`           | `false`             | Disable incremental caching, force full re-parse                 |
+| `-no-cache`           | `false`             | Disable `word-indent` caching and force a full re-parse           |
 | `-keep-overlaps`      | `false`             | Keep overlapping occurrences (don't prune adjacent matches)      |
 | `-github-annotations` | `false`             | Output GitHub Actions annotations for inline PR comments         |
 | `-github-level`       | `warning`           | GitHub annotation level: `notice`, `warning`, or `error`         |
 | `-git-diff`           |                     | Only annotate files changed vs this git ref (e.g., `origin/main`)|
 | `-compare`            |                     | Compare duplicates between two commits (format: `base..head`)    |
 | `-debug`              | `false`             | Print verbose progress for long-running phases                   |
+| `-version`            | `false`             | Print the QuickDup version and exit                              |
 | `-timeout`            | `20`                | Hard timeout in seconds (0 disables)                             |
 
 ## Detection Strategies
@@ -180,17 +190,21 @@ When `--github-annotations` is enabled, QuickDup outputs in GitHub's annotation 
 
 ## Incremental Caching
 
-QuickDup caches parsed file data in `.quickdup/cache.gob`. On subsequent runs, only modified files are re-parsed:
+Only the `word-indent` strategy caches parsed file data, in
+`.quickdup/word-indent-cache.gob`. On subsequent `word-indent` runs, only modified
+files are re-parsed. The default `normalized-indent`, `word-only`, and `inlineable`
+strategies always re-parse files.
 
 ```
 Parsed 558 files (542 cached, 16 parsed) (98234 lines of code)
 ```
 
-This dramatically speeds up repeated runs during development. Use `-no-cache` to force a full re-parse.
+This speeds up repeated `word-indent` runs during development. Use `-no-cache` to force a full re-parse.
 
 ## Ignoring Patterns
 
-Create `.quickdup/ignore.json` to suppress known patterns:
+Create `.quickdup/<strategy>-ignore.json` to suppress known patterns for one
+strategy, for example `.quickdup/normalized-indent-ignore.json`:
 
 ```json
 {
@@ -202,7 +216,9 @@ Create `.quickdup/ignore.json` to suppress known patterns:
 }
 ```
 
-Pattern hashes are shown in the output for easy copy-paste.
+Pattern hashes are shown in the output for easy copy-paste. The file accepts raw
+hexadecimal hashes, bracketed hashes copied from the display, and hashes with a
+`0x` prefix.
 
 ## Supported Languages
 

@@ -1,0 +1,17 @@
+{
+  "schema_version": "main-verify.v2",
+  "name": "Go quality evidence",
+  "commands": [
+    "python3 ./scripts/quality_evidence.py"
+  ],
+  "timeout": "10m",
+  "evidence": [
+    {
+      "command": "python3 ./scripts/quality_evidence.py",
+      "producer_id": "backend-tests",
+      "kind": "test-results",
+      "payload_schema": "test-results.v1",
+      "required": true
+    }
+  ]
+}

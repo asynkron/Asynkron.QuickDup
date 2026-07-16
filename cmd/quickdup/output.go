@@ -117,9 +117,9 @@ func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowRank,
 }
 
 // PrintIgnoredPatterns prints count of loaded ignored patterns
-func PrintIgnoredPatterns(count int) {
+func PrintIgnoredPatterns(count int, strategyName string) {
 	if count > 0 {
-		fmt.Printf("Loaded %d ignored patterns from ignore.json\n", count)
+		fmt.Printf("Loaded %d ignored patterns from .quickdup/%s-ignore.json\n", count, strategyName)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -129,12 +131,12 @@ func TopN(matches []PatternMatch, n int) []PatternMatch {
 	return matches[:n]
 }
 
-// LoadIgnoredHashes reads ignore.json and returns user-ignored hashes
+// LoadIgnoredHashes reads <strategy>-ignore.json and returns user-ignored hashes.
 func LoadIgnoredHashes(dir string, strategyName string) map[uint64]bool {
 	ignorePath := filepath.Join(dir, ".quickdup", strategyName+"-ignore.json")
 	data, err := os.ReadFile(ignorePath)
 	if err != nil {
-		// Create empty ignore.json if it doesn't exist
+		// Create an empty strategy-specific ignore file if it doesn't exist.
 		if os.IsNotExist(err) {
 			emptyIgnore := IgnoreFile{Ignored: []string{}}
 			if jsonData, err := json.MarshalIndent(emptyIgnore, "", "  "); err == nil {
@@ -143,21 +145,45 @@ func LoadIgnoredHashes(dir string, strategyName string) map[uint64]bool {
 				}
 			}
 		}
-		return nil
+		return map[uint64]bool{}
 	}
 
 	var ignoreFile IgnoreFile
 	if err := json.Unmarshal(data, &ignoreFile); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", ignorePath, err)
-		return nil
+		return map[uint64]bool{}
 	}
 
 	ignored := make(map[uint64]bool)
 	for _, hashStr := range ignoreFile.Ignored {
-		var hash uint64
-		if _, err := fmt.Sscanf(hashStr, "%x", &hash); err == nil {
+		if hash, ok := parseIgnoredHash(hashStr); ok {
 			ignored[hash] = true
 		}
 	}
 	return ignored
+}
+
+func parseIgnoredHash(value string) (uint64, bool) {
+	hash := strings.TrimSpace(value)
+	if strings.HasPrefix(hash, "[") || strings.HasSuffix(hash, "]") {
+		if len(hash) < 2 || !strings.HasPrefix(hash, "[") || !strings.HasSuffix(hash, "]") {
+			return 0, false
+		}
+		hash = strings.TrimSpace(hash[1 : len(hash)-1])
+	}
+
+	if len(hash) >= 2 && strings.EqualFold(hash[:2], "0x") {
+		hash = hash[2:]
+	}
+	if hash == "" || strings.IndexFunc(hash, func(r rune) bool {
+		return !('0' <= r && r <= '9') && !('a' <= r && r <= 'f') && !('A' <= r && r <= 'F')
+	}) >= 0 {
+		return 0, false
+	}
+
+	parsed, err := strconv.ParseUint(hash, 16, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
 }

@@ -102,18 +102,23 @@ func main() {
 	minSimilarity := flag.Float64("min-similarity", 0.75, "Minimum token similarity between occurrences (0.0-1.0)")
 	topN := flag.Int("top", 10, "Show top N matches by blended rank")
 	comment := flag.String("comment", "", "Override comment prefix (auto-detected by extension)")
-	noCache := flag.Bool("no-cache", false, "Disable incremental caching, force full re-parse")
+	noCache := flag.Bool("no-cache", false, "Disable incremental caching (word-indent only), force full re-parse")
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
 	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
-	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable")
+	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable; selects .quickdup/<strategy>-results.json and <strategy>-ignore.json (word-indent also uses word-indent-cache.gob)")
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
 	keepOverlaps := flag.Bool("keep-overlaps", false, "Keep overlapping occurrences (don't prune adjacent matches)")
 	debug := flag.Bool("debug", false, "Print verbose progress for long-running phases")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	timeoutSeconds := flag.Int("timeout", 20, "Hard timeout in seconds (0 disables)")
 	flag.Parse()
+	if *showVersion {
+		writeVersion(os.Stdout)
+		return
+	}
 	quickdup.Debug = *debug
 	quickdup.ProgressOutput = os.Stdout
 	if *timeoutSeconds > 0 {
@@ -222,9 +227,9 @@ func main() {
 		quickdup.CommentPrefix = "//" // fallback default
 	}
 
-	// Load user-ignored hashes from ignore.json
+	// Load user-ignored hashes from the strategy-specific ignore file.
 	userIgnored := quickdup.LoadIgnoredHashes(folder, *strategyName)
-	PrintIgnoredPatterns(len(userIgnored))
+	PrintIgnoredPatterns(len(userIgnored), *strategyName)
 
 	// First pass: count files
 	var files []string

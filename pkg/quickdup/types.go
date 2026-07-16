@@ -42,7 +42,7 @@ type JSONOutput struct {
 	Patterns      []JSONPattern `json:"patterns"`
 }
 
-// IgnoreFile represents the structure of ignore.json
+// IgnoreFile represents the structure of a strategy-specific ignore file.
 type IgnoreFile struct {
 	Description string   `json:"description"`
 	Ignored     []string `json:"ignored"`

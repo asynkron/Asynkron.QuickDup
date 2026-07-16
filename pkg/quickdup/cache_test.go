@@ -31,8 +31,18 @@ func TestWordIndentCacheUsesStrategySpecificFile(t *testing.T) {
 		t.Fatal("LoadCache() = nil, want the word-indent cache")
 	}
 	cached, ok := cache.Files[sourcePath]
-	if !ok || len(cached.Entries) != 1 || cached.Entries[0].Word != "package" {
+	if !ok || len(cached.Entries) != 1 {
 		t.Fatalf("cached entry = %+v, %v; want one package entry", cached, ok)
+	}
+	actual := cached.Entries[0]
+	if actual.LineNumber != entry.LineNumber ||
+		actual.IndentDelta != entry.IndentDelta ||
+		actual.Word != entry.Word ||
+		actual.SourceLine != entry.SourceLine {
+		t.Fatalf("cached entry = %+v; want %+v", actual, *entry)
+	}
+	if string(actual.HashBytes()) != string(entry.HashBytes()) {
+		t.Fatalf("cached hash bytes = %q; want %q", actual.HashBytes(), entry.HashBytes())
 	}
 }
 

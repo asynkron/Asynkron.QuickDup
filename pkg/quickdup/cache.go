@@ -1,6 +1,7 @@
 package quickdup
 
 import (
+	"bytes"
 	"encoding/gob"
 	"os"
 	"path/filepath"
@@ -21,7 +22,43 @@ type FileCache struct {
 	Files   map[string]CachedFile
 }
 
-const cacheVersion = 1
+const cacheVersion = 2
+
+type wordIndentEntryCache struct {
+	LineNumber  int
+	IndentDelta int
+	Word        string
+	SourceLine  string
+}
+
+// GobEncode preserves the exported entry state without exposing indentEntry,
+// which remains an internal implementation detail of the shared strategies.
+func (e WordIndentEntry) GobEncode() ([]byte, error) {
+	var data bytes.Buffer
+	err := gob.NewEncoder(&data).Encode(wordIndentEntryCache{
+		LineNumber:  e.LineNumber,
+		IndentDelta: e.IndentDelta,
+		Word:        e.Word,
+		SourceLine:  e.SourceLine,
+	})
+	return data.Bytes(), err
+}
+
+// GobDecode restores both the persisted entry state and its derived hash.
+func (e *WordIndentEntry) GobDecode(data []byte) error {
+	var cached wordIndentEntryCache
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&cached); err != nil {
+		return err
+	}
+
+	e.indentEntry = newIndentEntry(
+		cached.LineNumber,
+		cached.IndentDelta,
+		cached.Word,
+		cached.SourceLine,
+	)
+	return nil
+}
 
 // LoadCache loads the on-disk file cache for strategyName, or nil if absent,
 // stale, or the strategy isn't cacheable (only word-indent is, since it's

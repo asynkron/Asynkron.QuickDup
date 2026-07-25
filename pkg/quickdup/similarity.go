@@ -73,28 +73,35 @@ func tokenizePattern(pattern []Entry) []string {
 	return tokens
 }
 
-// tokenSimilarity computes Jaccard similarity between two token sets
-func tokenSimilarity(a, b []string) float64 {
-	if len(a) == 0 && len(b) == 0 {
+// tokenSet collects tokens into a deduplicated set for similarity comparison.
+func tokenSet(tokens []string) map[string]bool {
+	set := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		set[t] = true
+	}
+	return set
+}
+
+// tokenSimilarity computes Jaccard similarity between two token sets.
+// Callers pass sets built once via tokenSet so the pairwise loop in
+// clusterBySimilarity does not rebuild them on every comparison.
+func tokenSimilarity(setA, setB map[string]bool) float64 {
+	if len(setA) == 0 && len(setB) == 0 {
 		return 1.0
 	}
-	if len(a) == 0 || len(b) == 0 {
+	if len(setA) == 0 || len(setB) == 0 {
 		return 0.0
 	}
 
-	setA := make(map[string]bool)
-	for _, t := range a {
-		setA[t] = true
-	}
-
-	setB := make(map[string]bool)
-	for _, t := range b {
-		setB[t] = true
+	// Iterate the smaller set; lookups dominate and the result is symmetric.
+	small, large := setA, setB
+	if len(large) < len(small) {
+		small, large = large, small
 	}
 
 	intersection := 0
-	for t := range setA {
-		if setB[t] {
+	for t := range small {
+		if large[t] {
 			intersection++
 		}
 	}
@@ -120,10 +127,11 @@ func clusterBySimilarity(locations []PatternLocation, threshold float64) []Clust
 		return []ClusterResult{{Locations: locations, Similarity: 1.0}}
 	}
 
-	// Tokenize all patterns
-	tokenized := make([][]string, n)
+	// Tokenize all patterns into deduplicated sets once. The O(n^2) loop below
+	// reuses them, so no map is allocated per comparison.
+	sets := make([]map[string]bool, n)
 	for i, loc := range locations {
-		tokenized[i] = tokenizePattern(loc.Pattern)
+		sets[i] = tokenSet(tokenizePattern(loc.Pattern))
 	}
 
 	// Compute pairwise similarities and build clusters using Union-Find
@@ -132,7 +140,7 @@ func clusterBySimilarity(locations []PatternLocation, threshold float64) []Clust
 
 	for i := 0; i < n; i++ {
 		for j := i + 1; j < n; j++ {
-			sim := tokenSimilarity(tokenized[i], tokenized[j])
+			sim := tokenSimilarity(sets[i], sets[j])
 			similarities[[2]int{i, j}] = sim
 			if sim >= threshold {
 				uf.Union(i, j)

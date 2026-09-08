@@ -568,6 +568,9 @@ func duplicateInstanceCount(candidates []Candidate) int {
 func candidateFromMatch(root string, languageByPath map[string]string, match asynkronquickdup.PatternMatch) (Candidate, error) {
 	occurrences := make([]Occurrence, 0, len(match.Locations))
 	for _, location := range match.Locations {
+		if len(location.Pattern) == 0 {
+			return Candidate{}, fmt.Errorf("duplicate occurrence is missing its source pattern")
+		}
 		rel, err := filepath.Rel(root, location.Filename)
 		if err != nil {
 			return Candidate{}, err
@@ -577,7 +580,7 @@ func candidateFromMatch(root string, languageByPath map[string]string, match asy
 			Path:      rel,
 			Language:  languageByPath[location.Filename],
 			StartLine: location.LineStart,
-			EndLine:   location.LineStart + len(match.Pattern) - 1,
+			EndLine:   location.Pattern[len(location.Pattern)-1].GetLineNumber(),
 		})
 	}
 	sort.SliceStable(occurrences, func(i, j int) bool {

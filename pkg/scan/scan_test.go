@@ -11,6 +11,36 @@ import (
 	"time"
 )
 
+func TestRunPreservesEachOccurrencesPhysicalEndLine(t *testing.T) {
+	root := t.TempDir()
+	writeQuickDupFile(t, root, "a.go", "package sample\nfunc Alpha() {\n\tx := 1\n\n\ty := 2\n\n\tz := x + y\n\t_ = z\n}\n")
+	writeQuickDupFile(t, root, "b.go", "package sample\nfunc Alpha() {\n\tx := 1\n\ty := 2\n\n\n\n\tz := x + y\n\t_ = z\n}\n")
+	response, err := Run(t.Context(), Options{RepoRoot: root, SourceDirs: []string{"."}, Languages: []string{"go"}, TopN: 1, MinLines: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Candidates) != 1 || len(response.Candidates[0].Occurrences) != 2 {
+		t.Fatalf("expected one shared block: %+v", response.Candidates)
+	}
+	candidate := response.Candidates[0]
+	for _, occurrence := range candidate.Occurrences {
+		data, err := os.ReadFile(filepath.Join(root, occurrence.Path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		var actual []string
+		for _, line := range lines[occurrence.StartLine-1 : occurrence.EndLine] {
+			if strings.TrimSpace(line) != "" {
+				actual = append(actual, line)
+			}
+		}
+		if strings.Join(actual, "\n") != strings.Join(candidate.Sample, "\n") {
+			t.Errorf("%s:%d-%d omits matched source lines: got %q, want %q", occurrence.Path, occurrence.StartLine, occurrence.EndLine, actual, candidate.Sample)
+		}
+	}
+}
+
 func TestRunReturnsSchemaRankedDuplicatesFromCompiledQuickDup(t *testing.T) {
 	root := t.TempDir()
 	block := `package sample

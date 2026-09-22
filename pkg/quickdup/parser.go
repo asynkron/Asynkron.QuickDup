@@ -57,8 +57,58 @@ var skipFirstWords = map[string]map[string]bool{
 	},
 }
 
-// currentFileExt is set during parsing to track the current file's extension
+// currentFileExt is set during parsing to track the current file's extension.
+// Parsing runs concurrently, so it is pinned once per scan (every file in a
+// scan shares one extension) via setCurrentFileExt instead of being written
+// per file from inside the worker pool.
 var currentFileExt string
+
+func setCurrentFileExt(path string) {
+	currentFileExt = strings.ToLower(filepath.Ext(path))
+}
+
+// importFirstWords lists the first-word tokens that begin an import
+// statement per file extension. Import plumbing is identical across files
+// by construction, so it must never become duplication evidence.
+var importFirstWords = map[string]map[string]bool{
+	".go":    {"import": true},
+	".py":    {"import": true, "from": true},
+	".ts":    {"import": true},
+	".tsx":   {"import": true},
+	".js":    {"import": true},
+	".jsx":   {"import": true},
+	".mjs":   {"import": true},
+	".cjs":   {"import": true},
+	".java":  {"import": true},
+	".kt":    {"import": true},
+	".scala": {"import": true},
+	".cs":    {"using": true},
+	".rs":    {"use": true},
+}
+
+// skipImportLine reports whether the line belongs to an import statement,
+// including multi-line blocks such as Go's `import (` or TypeScript's
+// `import {` ... `} from '...'`. inBlock carries the block state across
+// successive lines of one file.
+func skipImportLine(line string, keywords map[string]bool, inBlock *bool) bool {
+	if len(keywords) == 0 {
+		return false
+	}
+	trimmed := strings.TrimSpace(line)
+	if *inBlock {
+		if strings.HasPrefix(trimmed, ")") || strings.HasPrefix(trimmed, "}") || strings.HasPrefix(trimmed, "]") {
+			*inBlock = false
+		}
+		return true
+	}
+	if !keywords[extractFirstWord(line)] {
+		return false
+	}
+	if strings.HasSuffix(trimmed, "(") || strings.HasSuffix(trimmed, "{") || strings.HasSuffix(trimmed, "[") {
+		*inBlock = true
+	}
+	return true
+}
 
 func parseFile(path string) ([]Entry, error) {
 	data, err := os.ReadFile(path)
@@ -66,17 +116,21 @@ func parseFile(path string) ([]Entry, error) {
 		return nil, err
 	}
 
-	// Set current file extension for skip word checking
-	currentFileExt = strings.ToLower(filepath.Ext(path))
-
 	content := ActiveStrategy.Preparse(string(data))
 	lines := strings.Split(content, "\n")
+
+	keywords := importFirstWords[strings.ToLower(filepath.Ext(path))]
+	inImportBlock := false
 
 	var entries []Entry
 	var prevEntry Entry
 
 	for lineNumber, line := range lines {
 		lineNumber++ // 1-based line numbers
+
+		if skipImportLine(line, keywords, &inImportBlock) {
+			continue
+		}
 
 		entry, skip := ActiveStrategy.ParseLine(lineNumber, line, prevEntry)
 		if skip {

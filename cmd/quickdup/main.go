@@ -106,7 +106,7 @@ func main() {
 	githubAnnotations := flag.Bool("github-annotations", false, "Output GitHub Actions annotations for inline PR comments")
 	githubLevel := flag.String("github-level", "warning", "GitHub annotation level: notice, warning, or error")
 	gitDiff := flag.String("git-diff", "", "Only annotate files changed vs this git ref (e.g., origin/main)")
-	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go')")
+	exclude := flag.String("exclude", "", "Exclude files matching patterns (comma-separated, e.g., '*.pb.go,*_gen.go'); patterns match as basename globs or path substrings on top of Git-ignore and dependency/build-dir skipping")
 	compare := flag.String("compare", "", "Compare duplicates between two commits (format: base..head)")
 	strategyName := flag.String("strategy", "normalized-indent", "Detection strategy: word-indent, normalized-indent, word-only, inlineable; selects .quickdup/<strategy>-results.json and <strategy>-ignore.json (word-indent also uses word-indent-cache.gob)")
 	selectRange := flag.String("select", "", "Show detailed output for patterns (format: skip..limit, e.g., 0..5)")
@@ -237,32 +237,7 @@ func main() {
 	if singleFile != "" {
 		files = []string{singleFile}
 	} else {
-		err = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if !info.IsDir() && strings.EqualFold(filepath.Ext(path), extension) {
-				// Check exclude patterns
-				excluded := false
-				for _, pattern := range excludePatterns {
-					// Check if pattern matches basename (glob) or is contained in path (substring)
-					if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
-						excluded = true
-						break
-					}
-					// Also check if pattern is a substring of the path (for directory patterns like ".Tests/")
-					if strings.Contains(path, pattern) {
-						excluded = true
-						break
-					}
-				}
-				if !excluded {
-					files = append(files, path)
-				}
-			}
-			return nil
-		})
-
+		files, err = discoverScanFiles(folder, extension, excludePatterns)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error walking directory: %v\n", err)
 			os.Exit(1)
@@ -314,11 +289,12 @@ func main() {
 		MinRank:       *minRank,
 		MinSimilarity: *minSimilarity,
 		UserIgnored:   userIgnored,
+		TotalFiles:    len(fileData),
 	})
 	filterTime := time.Since(filterStart)
 
 	// Report results
-	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowRank, filterStats.SkippedLowSimilarity, *minRank, *minSimilarity)
+	PrintFilterComplete(filterTime, filterStats.SkippedBlocked, filterStats.SkippedLowRank, filterStats.SkippedLowSimilarity, filterStats.SkippedBoilerplate, *minRank, *minSimilarity)
 
 	top := quickdup.TopN(matches, *topN)
 

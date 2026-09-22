@@ -102,7 +102,7 @@ func PrintDetectComplete(duration time.Duration) {
 }
 
 // PrintFilterComplete prints filtering completion and stats
-func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowRank, skippedLowSimilarity int, minRank int, minSimilarity float64) {
+func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowRank, skippedLowSimilarity, skippedBoilerplate int, minRank int, minSimilarity float64) {
 	fmt.Printf("Filtering took %s\n", duration.Round(time.Millisecond))
 
 	if skippedBlocked > 0 {
@@ -113,6 +113,9 @@ func PrintFilterComplete(duration time.Duration, skippedBlocked, skippedLowRank,
 	}
 	if skippedLowSimilarity > 0 {
 		fmt.Printf("Filtered %d low-similarity patterns (similarity < %.0f%%)\n", skippedLowSimilarity, minSimilarity*100)
+	}
+	if skippedBoilerplate > 0 {
+		fmt.Printf("Filtered %d high-frequency boilerplate patterns\n", skippedBoilerplate)
 	}
 }
 

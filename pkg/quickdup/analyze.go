@@ -108,6 +108,9 @@ func AnalyzeFiles(opts AnalyzeOptions) (AnalyzeResult, error) {
 		if CommentPrefix == "" {
 			CommentPrefix = "//"
 		}
+		// Sequential under analyzeMu, so the first-word skip state can be
+		// pinned per file here.
+		setCurrentFileExt(file)
 		entries, err := parseFile(file)
 		if err != nil {
 			return AnalyzeResult{}, err
@@ -128,6 +131,7 @@ func AnalyzeFiles(opts AnalyzeOptions) (AnalyzeResult, error) {
 		MinRank:       minRank,
 		MinSimilarity: minSimilarity,
 		UserIgnored:   map[uint64]bool{},
+		TotalFiles:    len(fileData),
 	})
 	_ = strategyName
 	return AnalyzeResult{FilesScanned: len(fileData), LinesScanned: linesScanned, Matches: matches}, nil

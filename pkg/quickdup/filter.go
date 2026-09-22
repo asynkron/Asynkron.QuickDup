@@ -18,6 +18,10 @@ type FilterConfig struct {
 	MinRank       int
 	MinSimilarity float64
 	UserIgnored   map[uint64]bool // user-defined patterns to ignore
+	// TotalFiles is the number of files in the scan. When > 0, pattern shapes
+	// that occur in a large fraction of the corpus are treated as idiomatic
+	// boilerplate rather than copied code and are skipped. 0 disables the rule.
+	TotalFiles int
 }
 
 // FilterStats holds statistics about filtered patterns
@@ -25,6 +29,21 @@ type FilterStats struct {
 	SkippedBlocked       int
 	SkippedLowRank       int
 	SkippedLowSimilarity int
+	SkippedBoilerplate   int
+}
+
+// boilerplateFileThreshold returns the distinct-file count at which a pattern
+// shape counts as corpus-wide boilerplate. Small scans floor at 10 files so a
+// shape repeated across most of a tiny project is still demoted.
+func boilerplateFileThreshold(totalFiles int) int {
+	if totalFiles <= 0 {
+		return 0
+	}
+	t := totalFiles / 10
+	if t < 10 {
+		t = 10
+	}
+	return t
 }
 
 // FilterPatterns filters raw patterns into scored matches
@@ -90,6 +109,19 @@ func FilterPatterns(patterns map[uint64][]PatternLocation, config FilterConfig) 
 			if len(cluster.Locations) < config.MinOccur {
 				stats.SkippedLowSimilarity++
 				continue
+			}
+
+			// Skip shapes that repeat across a large fraction of the corpus:
+			// they are idiomatic boilerplate, not copied code.
+			if threshold := boilerplateFileThreshold(config.TotalFiles); threshold > 0 {
+				distinct := make(map[string]bool, len(cluster.Locations))
+				for _, loc := range cluster.Locations {
+					distinct[loc.Filename] = true
+				}
+				if len(distinct) >= threshold {
+					stats.SkippedBoilerplate++
+					continue
+				}
 			}
 
 			score := ActiveStrategy.Score(c.pattern, cluster.Similarity)

@@ -22,7 +22,10 @@ type FileCache struct {
 	Files   map[string]CachedFile
 }
 
-const cacheVersion = 2
+// cacheVersion invalidates persisted caches when parse semantics change.
+// Version 3: import statements and multi-line import blocks are no longer
+// parsed into entries.
+const cacheVersion = 3
 
 type wordIndentEntryCache struct {
 	LineNumber  int
@@ -145,6 +148,12 @@ func ParseFilesWithCache(files []string, cache *FileCache) (map[string][]Entry, 
 	var mu sync.Mutex
 	var cacheHits atomic.Int64
 	var cacheMisses atomic.Int64
+
+	// Pin the extension once: first-word skip checks read it, and a per-file
+	// write from the worker pool below would be a data race.
+	if len(files) > 0 {
+		setCurrentFileExt(files[0])
+	}
 
 	// Create work channel
 	work := make(chan string, len(files))
